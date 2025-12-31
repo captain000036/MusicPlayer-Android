@@ -11,8 +11,9 @@ source.include_exts = py,png,jpg,kv,atlas,otf
 # 版本號
 version = 0.1
 
-# 【關鍵】這裡直接指定 cython==0.29.36，讓機器人自動處理版本問題
-requirements = python3,kivy,cython==0.29.36,yt_dlp,requests,mutagen,openssl
+# 【關鍵修正】加入 ffpyplayer, libffi, six 防止閃退
+# 並且保留 cython==0.29.36 鎖定版本
+requirements = python3,kivy,cython==0.29.36,yt_dlp,requests,mutagen,openssl,ffpyplayer,libffi,six
 
 # 顯示設定
 orientation = portrait
@@ -26,6 +27,9 @@ android.api = 31
 android.minapi = 21
 android.accept_sdk_license = True
 android.entrypoint = org.kivy.android.PythonActivity
+
+# 分支設定
+p4a.branch = master
 
 [buildozer]
 log_level = 2
