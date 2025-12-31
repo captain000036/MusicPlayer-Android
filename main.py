@@ -1,8 +1,7 @@
 import os
 import threading
-import traceback
-import contextlib
-import urllib.request
+import ssl  # 新增：解決 HTTPS 圖片問題
+import certifi  # 新增：解決 HTTPS 圖片問題
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
@@ -17,52 +16,56 @@ from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.animation import Animation
 from kivy.event import EventDispatcher
-from kivy.config import Config
 from kivy.core.text import LabelBase
 
-# 1. 基礎環境設定
+# ==========================================
+# 1. 環境與 SSL 設定 (解決圖片全黑問題)
+# ==========================================
 os.environ['SDL_IME_SHOW_UI'] = '1'
+os.environ['SSL_CERT_FILE'] = certifi.where() # 強制指定憑證位置
 
-# 2. 字體防呆載入
+# ==========================================
+# 2. 字體載入 (解決中文亂碼)
+# ==========================================
+# 請確保 'NotoSansTC-Regular.otf' 檔案確實在專案資料夾內
 FONT_NAME = 'Roboto'
 try:
     LabelBase.register(name='MyFont',
                        fn_regular='NotoSansTC-Regular.otf',
-                       fn_bold='NotoSansTC-Bold.otf')
+                       fn_bold='NotoSansTC-Regular.otf') # 暫時都用 Regular 避免缺檔
     FONT_NAME = 'MyFont'
-except:
-    pass
+except Exception as e:
+    print(f"字體載入失敗: {e}")
 
-# 3. 解決 Android 權限的私有路徑
+# ==========================================
+# 3. Android 路徑與權限
+# ==========================================
 def get_storage_path():
     if platform == 'android':
         try:
             from jnius import autoclass
-            context = autoclass('org.kivy.android.PythonActivity').mActivity
+            # 使用 App 專屬資料夾，Android 11+ 不需要額外寫入權限即可存取
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            context = PythonActivity.mActivity
             return context.getExternalFilesDir(None).getAbsolutePath()
-        except:
-            return "/sdcard/Music"
+        except Exception as e:
+            print(f"Path Error: {e}")
+            return "/sdcard/Download"
     else:
+        # 電腦版測試路徑
         root = os.path.join(os.getcwd(), 'Music')
         if not os.path.exists(root): os.makedirs(root, exist_ok=True)
         return root
 
-class QuietLogger:
-    def debug(self, msg): pass
-    def warning(self, msg): pass
-    def error(self, msg): print(f"[YTDLP_ERROR] {msg}")
-
 # ==========================================
-# 核心引擎 (改用 Android Native Player)
+# 核心引擎 (Android Native MediaPlayer)
 # ==========================================
 class MusicEngine(EventDispatcher):
-    # 這裡保留事件介面，讓 UI 以為還是一樣的運作方式
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.player = None
-        self.is_prepared = False
         
         if platform == 'android':
             try:
@@ -74,16 +77,15 @@ class MusicEngine(EventDispatcher):
 
     def load_track(self, filepath):
         if not self.player: 
-            # 電腦版 fallback (為了讓你在電腦也能跑，這裡保留一個假的或使用 Kivy Sound)
-            self.dispatch('on_error', "電腦版請使用舊引擎，此為手機專用")
+            # 電腦版測試時若無 Jnius 會跳過
+            print("非 Android 環境，跳過原生播放器載入")
             return
 
         try:
             self.player.reset()
             self.player.setDataSource(filepath)
-            self.player.prepare() # 同步準備，確保穩定
+            self.player.prepare()
             self.player.start()
-            self.is_prepared = True
             self.dispatch('on_playback_ready', True)
         except Exception as e:
             self.dispatch('on_error', str(e))
@@ -93,10 +95,10 @@ class MusicEngine(EventDispatcher):
         try:
             if self.player.isPlaying():
                 self.player.pause()
-                return False # 狀態：暫停
+                return False # 暫停狀態
             else:
                 self.player.start()
-                return True # 狀態：播放中
+                return True # 播放狀態
         except:
             return False
 
@@ -109,7 +111,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, error): pass
 
 # ==========================================
-# KV 介面 (完整的雙介面代碼)
+# KV 介面
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -118,7 +120,6 @@ KV_CODE = f"""
     do_scroll_x: False
     do_scroll_y: False
     bar_width: 0
-    effect_cls: 'ScrollEffect'
     Label:
         id: lbl
         text: root.text
@@ -208,12 +209,6 @@ KV_CODE = f"""
             pos: self.pos
             size: self.size
             radius: [10,]
-    canvas.after:
-        Color:
-            rgba: [1, 1, 1, 0.2]
-        Ellipse:
-            pos: self.x + self.width - 40, self.y - 10
-            size: 60, 60
 
 <SpotifyCard>:
     background_normal: ''
@@ -589,18 +584,31 @@ class MusicPlayerApp(App):
         self.root.ids.search_input.focus = False
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
+    # ==========================================
+    # 修正重點 1: 搜尋線程
+    # ==========================================
     def _search_thread(self, keyword):
         if not self.yt_dlp_module: return
-        ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True}
+        # 增加 ignoreerrors 以免一首歌錯誤就崩潰
+        ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True, 'ignoreerrors': True}
         results_data = []
         try:
             with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch5:{keyword}", download=False)
+                # 修正：將 ytsearch5 改為 ytsearch20 以顯示更多結果
+                info = ydl.extract_info(f"ytsearch20:{keyword}", download=False)
                 if info and 'entries' in info:
                     for i, entry in enumerate(info['entries']):
                         if entry:
-                            results_data.append({'title': entry.get('title', 'Unknown'), 'url': entry.get('url', ''), 'thumb': '', 'status_text': 'YouTube 音樂', 'index': i})
-        except Exception: pass
+                            # 修正：正確抓取縮圖網址
+                            results_data.append({
+                                'title': entry.get('title', 'Unknown'), 
+                                'url': entry.get('url', ''), 
+                                'thumb': entry.get('thumbnail', ''), # 這裡很重要
+                                'status_text': 'YouTube 音樂', 
+                                'index': i
+                            })
+        except Exception as e: 
+            print(f"Search Error: {e}")
         Clock.schedule_once(lambda dt: self._update_list(results_data))
 
     def _update_list(self, data):
@@ -623,7 +631,8 @@ class MusicPlayerApp(App):
         # 先找看看有沒有下載過
         if os.path.exists(folder):
             for f in os.listdir(folder):
-                if safe_title in f and f.endswith('.mp3'):
+                # 支援 mp3, m4a, mp4
+                if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
                     target_file = os.path.join(folder, f)
                     break
         
@@ -636,6 +645,9 @@ class MusicPlayerApp(App):
         self.current_playing_title = f"下載中：{title}..."
         threading.Thread(target=self._download_thread, args=(url, title)).start()
 
+    # ==========================================
+    # 修正重點 2: 下載線程 (Android 專用優化)
+    # ==========================================
     def _download_thread(self, url, title):
         try:
             save_path = get_storage_path()
@@ -644,14 +656,18 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(save_path, f'{safe_title}.%(ext)s')
             
-            # 清理舊暫存 (為了省空間，這裡只留最新的一首，若要保留請註解掉這行)
-            # for f in os.listdir(save_path): os.remove(os.path.join(save_path, f))
-
-            ydl_opts = {'format': 'bestaudio/best', 'outtmpl': out_tmpl, 'quiet': True}
+            # 重要：強制只抓音訊，且偏好 m4a/mp4，避免觸發 FFmpeg 合併
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/best[ext=mp4]/best', 
+                'outtmpl': out_tmpl, 
+                'quiet': True,
+                'nocheckcertificate': True # 備用 SSL 忽略方案
+            }
+            
             with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
             
-            # 找檔案
+            # 找檔案 (因為副檔名可能是 m4a 或 mp4)
             target_file = None
             for f in os.listdir(save_path):
                 if safe_title in f:
@@ -660,16 +676,17 @@ class MusicPlayerApp(App):
 
             if target_file:
                 Clock.schedule_once(lambda dt: self.engine.load_track(target_file), 0.1)
+                Clock.schedule_once(lambda dt: self._update_title(f"播放: {safe_title}"))
             else:
-                Clock.schedule_once(lambda dt: self._update_title("下載失敗"))
+                Clock.schedule_once(lambda dt: self._update_title("下載失敗: 找不到檔案"))
         except Exception as e:
             print(f"DL Error: {e}")
+            Clock.schedule_once(lambda dt: self._update_title(f"錯誤: {str(e)[:15]}"))
 
     def _update_title(self, text):
         self.current_playing_title = text
 
     def play_previous(self):
-        # 簡易切換
         new_index = self.current_song_index - 1
         self.play_manager(new_index)
 
