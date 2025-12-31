@@ -1,0 +1,27 @@
+name: Build Android APK
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # 這是打包的核心步驟，會自動讀取你的 buildozer.spec
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: buildozer android debug
+          buildozer_version: master
+
+      # 打包完成後，把 APK 上傳讓你下載
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicPlayer-APK
+          path: bin/*.apk
