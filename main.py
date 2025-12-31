@@ -2,7 +2,7 @@ import os
 import threading
 import contextlib
 import urllib.request
-# 注意：這裡先不 import yt_dlp，避免開機直接閃退
+# 注意：這裡不直接 import yt_dlp，防止開機秒閃退
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -39,19 +39,30 @@ try:
 except Exception as e:
     print(f"Font Error: {e}")
 
+# --- 【關鍵修改】使用 Android 私有目錄，解決權限閃退問題 ---
 def get_storage_path():
     if platform == 'android':
         try:
-            from android.storage import primary_external_storage_path
-            root = os.path.join(primary_external_storage_path(), 'Android', 'data', 'org.test.musicplayer', 'files', 'Music')
-        except:
-            root = "/sdcard/Music"
+            from jnius import autoclass
+            # 使用 Android 原生 API 取得私有路徑
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            context = PythonActivity.mActivity
+            # getExternalFilesDir(None) 對應的路徑通常是：
+            # /storage/emulated/0/Android/data/org.test.musicplayer/files
+            # 這個路徑不需要額外權限即可讀寫，絕對安全！
+            file_path = context.getExternalFilesDir(None).getAbsolutePath()
+            return str(file_path)
+        except Exception as e:
+            print(f"Path Error: {e}")
+            # 萬一真的失敗，回退到舊路徑
+            return "/sdcard/Music"
     else:
+        # 電腦版路徑
         root = os.path.join(os.getcwd(), 'Music')
-    if not os.path.exists(root):
-        try: os.makedirs(root, exist_ok=True)
-        except: pass
-    return root
+        if not os.path.exists(root):
+            try: os.makedirs(root, exist_ok=True)
+            except: pass
+        return root
 
 class QuietLogger:
     def debug(self, msg): pass
@@ -188,7 +199,7 @@ BoxLayout:
             pos: self.pos
             size: self.size
 
-    # --- 頂部狀態列 (顯示錯誤訊息用) ---
+    # --- 頂部狀態列 ---
     Label:
         id: status_label
         text: app.init_status
@@ -290,7 +301,8 @@ class MusicPlayerApp(App):
         
         if platform == 'android':
             from android.permissions import request_permissions, Permission
-            request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
+            # 雖然用了私有目錄，但網路權限還是要申請
+            request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE, Permission.WAKE_LOCK])
         
         # 延遲載入 yt_dlp，防止開機閃退
         Clock.schedule_once(self.load_libraries, 1)
@@ -331,14 +343,15 @@ class MusicPlayerApp(App):
             ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True}
             with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"ytsearch5:{keyword}", download=False)
-                for i, entry in enumerate(info['entries']):
-                    results.append({
-                        'title': entry.get('title', ''),
-                        'thumb': '', # 簡化測試
-                        'status_text': 'YouTube',
-                        'index': i,
-                        'url': entry.get('url', '')
-                    })
+                if 'entries' in info:
+                    for i, entry in enumerate(info['entries']):
+                        results.append({
+                            'title': entry.get('title', ''),
+                            'thumb': '', 
+                            'status_text': 'YouTube',
+                            'index': i,
+                            'url': entry.get('url', '')
+                        })
         except Exception as e:
             self.init_status = f"搜尋錯誤：{str(e)}"
         
@@ -350,18 +363,24 @@ class MusicPlayerApp(App):
         else: self.init_status = "搜尋完成"
 
     def play_manager(self, index):
-        # 簡化版播放邏輯，先測試能否搜尋
         data = self.root.ids.rv.data[index]
         self.current_playing_title = f"準備下載：{data['title']}"
         threading.Thread(target=self._download_thread, args=(data['url'],)).start()
 
     def _download_thread(self, url):
         try:
+            # 這裡會呼叫新版的 get_storage_path，確保有權限寫入
             save_path = get_storage_path()
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+                
             out_tmpl = os.path.join(save_path, 'temp.%(ext)s')
-            # 刪除舊檔
+            
+            # 刪除舊的暫存檔
             for f in os.listdir(save_path):
-                if f.startswith('temp'): os.remove(os.path.join(save_path, f))
+                if f.startswith('temp'): 
+                    try: os.remove(os.path.join(save_path, f))
+                    except: pass
 
             ydl_opts = {'format': 'bestaudio/best', 'outtmpl': out_tmpl, 'quiet': True}
             with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
@@ -374,6 +393,8 @@ class MusicPlayerApp(App):
             
             if target:
                 Clock.schedule_once(lambda dt: self.engine.load_track(target))
+            else:
+                self.init_status = "下載失敗：找不到檔案"
         except Exception as e:
             self.init_status = f"下載錯誤：{str(e)}"
 
