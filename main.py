@@ -10,7 +10,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.uix.button import Button  # 確保匯入 Button
+from kivy.uix.button import Button
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.image import AsyncImage
 from kivy.properties import StringProperty, ListProperty, BooleanProperty, NumericProperty
@@ -37,22 +37,26 @@ Config.set('graphics', 'height', '640')
 Config.set('graphics', 'resizable', '1')
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
-# 字體註冊 (維持你已經成功的設定)
+# --- 【關鍵修正】字體載入防呆機制 ---
+# 這樣就算找不到 .otf 檔案，APP 也不會直接閃退，而是印出錯誤並繼續執行
 try:
     LabelBase.register(name='Roboto',
                        fn_regular='NotoSansTC-Regular.otf',
                        fn_bold='NotoSansTC-Bold.otf')
     FONT_NAME = 'Roboto'
 except Exception as e:
-    print(f"字體載入警告: {e}")
+    print(f"【嚴重警告】字體載入失敗，將使用系統預設字體。錯誤原因: {e}")
+    # 保持 FONT_NAME 為 Roboto，Kivy 會自動回退到內建字體
     FONT_NAME = 'Roboto'
 
 def get_storage_path():
     if platform == 'android':
         from android.storage import primary_external_storage_path
-        root_path = os.path.join(primary_external_storage_path(), 'Android', 'data', 'org.test.myapp', 'files', 'Music')
+        # Android 11+ 建議存放在 APP 私有目錄，避免權限問題
+        root_path = os.path.join(primary_external_storage_path(), 'Android', 'data', 'org.test.musicplayer', 'files', 'Music')
     else:
         root_path = os.path.join(os.getcwd(), 'Music')
+    
     if not os.path.exists(root_path):
         try: os.makedirs(root_path, exist_ok=True)
         except: pass
@@ -228,21 +232,16 @@ KV_CODE = f"""
             pos: self.x + self.width - 40, self.y - 10
             size: 60, 60
 
-# --- 【修正重點】將 SpotifyCard 改為單一按鈕 ---
-# 這樣文字就會強制在正中間，而不是被擠在下面
 <SpotifyCard>:
     background_normal: ''
     background_color: 0, 0, 0, 0
     font_name: '{FONT_NAME}'
-    font_size: '18sp'  # 字體加大
+    font_size: '18sp'
     bold: True
     color: [1, 1, 1, 1]
-    
-    # 強制文字置中
     text_size: self.size
     halign: 'center'
     valign: 'center'
-
     canvas.before:
         Color:
             rgba: root.img_color
@@ -509,10 +508,8 @@ class AutoScrollLabel(ScrollView):
         else:
             self.scroll_x = 0
 
-# --- 【修正重點】類別改為繼承 Button ---
 class SpotifyCard(Button): 
     img_color = ListProperty([0.3, 0.3, 0.3, 1])
-    # 因為是 Button，本身就有 text 屬性，不需要額外定義
 
 class SongListItem(ButtonBehavior, BoxLayout):
     title = StringProperty("")
