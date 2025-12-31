@@ -3,6 +3,8 @@
 title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
+# 強制支援 64 位元架構 (現代手機必備)
+android.archs = arm64-v8a
 
 # 程式碼位置
 source.dir = .
@@ -17,7 +19,7 @@ version = 0.2
 # - sqlite3, pyjnius: Android 系統互動需求
 # - libffi, openssl, six: 底層通訊需求
 # - pillow: 圖片處理需求
-requirements = python3,kivy,cython==0.29.36,yt_dlp,requests,mutagen,openssl,ffpyplayer,libffi,six,sqlite3,pyjnius,pillow,certifi,pycryptodomex,brotli,websockets
+requirements = python3,kivy,cython==0.29.36,yt_dlp,requests,mutagen,openssl,libffi,six,sqlite3,pyjnius,pillow,certifi,pycryptodomex,brotli,websockets
 
 # 顯示設定
 orientation = portrait
@@ -38,3 +40,4 @@ p4a.branch = master
 [buildozer]
 log_level = 2
 warn_on_root = 1
+
