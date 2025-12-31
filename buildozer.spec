@@ -17,7 +17,7 @@ source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 # 2. 加入 pyjnius -> 讓你的 Python 可以呼叫 Android Java (MediaPlayer)
 # 3. 加入 android -> 基礎依賴
 # 4. 保留 cython 固定版本 -> 避免編譯失敗
-requirements = python3,kivy,android,cython==0.29.36,yt-dlp,requests,mutagen,openssl,certifi,pyjnius,pillow
+requirements = python3,kivy,android,cython==0.29.36,yt-dlp,requests,mutagen,openssl,certifi,pyjnius,pillow,ffpyplayer,ffpyplayer_codecs,sdl2_image
 
 # (4) 顯示與方向
 orientation = portrait
@@ -52,3 +52,4 @@ p4a.branch = master
 # Log 等級 (2 = Debug，打包失敗時可以看到詳細原因)
 log_level = 2
 warn_on_root = 1
+
