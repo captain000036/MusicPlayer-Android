@@ -2,26 +2,68 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 讓你可以手動按按鈕重跑
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # 使用穩定的 Ubuntu 版本
 
     steps:
-      # 1. 下載程式碼 (升級到 v4，解決 Node.js 錯誤)
+      # 1. 下載你的程式碼
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 執行打包 (自動讀取你的 buildozer.spec)
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
+      # 2. 設定 Java 環境 (Android 打包需要)
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          command: buildozer android debug
-          buildozer_version: master
+          distribution: 'temurin'
+          java-version: '17'
 
-      # 3. 上傳 APK (升級到 v4，解決上傳失敗)
+      # 3. 安裝系統必要元件 (就像我們在 Colab 做的一樣)
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            build-essential \
+            git \
+            python3 \
+            python3-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libgstreamer1.0 \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libffi-dev \
+            libssl-dev \
+            autoconf \
+            libtool \
+            automake
+
+      # 4. 安裝 Buildozer 和 Cython (關鍵版本鎖定)
+      - name: Install Buildozer & Cython
+        run: |
+          pip3 install --upgrade pip
+          pip3 install buildozer
+          # 這裡再次強制鎖定，雙重保險
+          pip3 install "cython==0.29.36"
+
+      # 5. 開始打包 (這步會比較久，約 15-20 分鐘)
+      - name: Build with Buildozer
+        run: |
+          # yes | 指令是為了自動同意可能跳出的授權詢問
+          yes | buildozer android debug
+
+      # 6. 上傳結果
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
