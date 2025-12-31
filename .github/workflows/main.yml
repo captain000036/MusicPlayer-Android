@@ -2,16 +2,18 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: # 讓你可以手動按按鈕重跑
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. 下載程式碼 (升級到 v4，解決 Node.js 錯誤)
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      # 這是打包的核心步驟，會自動讀取你的 buildozer.spec
+      # 2. 執行打包 (自動讀取你的 buildozer.spec)
       - name: Build with Buildozer
         uses: ArtemSBulgakov/buildozer-action@v1
         id: buildozer
@@ -19,9 +21,10 @@ jobs:
           command: buildozer android debug
           buildozer_version: master
 
-      # 打包完成後，把 APK 上傳讓你下載
+      # 3. 上傳 APK (升級到 v4，解決上傳失敗)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MusicPlayer-APK
           path: bin/*.apk
+          compression-level: 0
