@@ -3,7 +3,7 @@ import sys
 import threading
 import contextlib
 import urllib.request
-import ssl  # 新增：解決 Android SSL 問題
+import ssl
 
 # ==========================================
 # 0. Android 救命補丁 (必須放在最上面)
@@ -21,11 +21,10 @@ except ImportError:
 # ==========================================
 from kivy.config import Config
 
-# 強制使用系統原生鍵盤 (解決輸入法無法切換的問題)
+# 強制使用系統原生鍵盤
 Config.set('kivy', 'keyboard_mode', 'system')
 Config.set('kivy', 'keyboard_layout', 'system')
 
-# 你原本的設定
 os.environ['SDL_IME_SHOW_UI'] = '1'
 os.environ['KIVY_GL_BACKEND'] = 'angle_sdl2'
 
@@ -33,15 +32,14 @@ Config.set('kivy', 'log_enable', '1')
 Config.set('kivy', 'log_maxfiles', '5')
 Config.set('kivy', 'log_level', 'info')
 
+# 避免介面太小
 Config.set('graphics', 'width', '360')
 Config.set('graphics', 'height', '640')
 Config.set('graphics', 'resizable', '1')
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
-
-# 允許圖片載入器忽略部分錯誤
 Config.set('network', 'useragent', 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36')
 
-import yt_dlp
+# ⚠️ 注意：這裡不要 import yt_dlp，改到後面用到的時候再 import
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
@@ -59,7 +57,7 @@ from kivy.animation import Animation
 from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 
-# 字體註冊 (維持你已經成功的設定)
+# 字體註冊
 try:
     LabelBase.register(name='Roboto',
                        fn_regular='NotoSansTC-Regular.otf',
@@ -72,7 +70,8 @@ except Exception as e:
 def get_storage_path():
     if platform == 'android':
         from android.storage import primary_external_storage_path
-        root_path = os.path.join(primary_external_storage_path(), 'Android', 'data', 'org.test.myapp', 'files', 'Music')
+        # 改回較安全的 Download 路徑
+        root_path = os.path.join(primary_external_storage_path(), 'Download', 'MusicPlayer')
     else:
         root_path = os.path.join(os.getcwd(), 'Music')
     if not os.path.exists(root_path):
@@ -85,9 +84,7 @@ class QuietLogger:
     def warning(self, msg): pass
     def error(self, msg): print(f"[YTDLP_ERROR] {msg}")
 
-# ==========================================
 # 核心架構：MusicEngine
-# ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
 
@@ -112,6 +109,7 @@ class MusicEngine(EventDispatcher):
 
     def _real_load(self, filepath):
         try:
+            # SoundLoader 依賴 ffpyplayer，這也是可能閃退的點，但通常是因為 requirements 沒寫
             self.sound = SoundLoader.load(filepath)
             if self.sound:
                 self.sound.bind(on_stop=self._on_stop_callback)
@@ -143,9 +141,7 @@ class MusicEngine(EventDispatcher):
     def on_track_finished(self): pass
     def on_error(self, error): pass
 
-# ==========================================
-# KV 介面設計
-# ==========================================
+# KV 介面設計 (維持不變)
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
 
@@ -492,9 +488,6 @@ BoxLayout:
             Widget: 
 """
 
-# ==========================================
-# 邏輯層
-# ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
     color = ListProperty([1, 1, 1, 1])
@@ -511,7 +504,7 @@ class AutoScrollLabel(ScrollView):
             self.lbl.text = value
             self.scroll_x = 0
             Animation.cancel_all(self)
-            self.start_anim() # 文字更新後重新啟動動畫
+            self.start_anim()
 
     def update_color(self, instance, value):
         if hasattr(self, 'lbl'):
@@ -630,7 +623,10 @@ class MusicPlayerApp(App):
         self.root.ids.search_input.focus = False
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
+    # 【關鍵修正】延遲 import yt_dlp，防止啟動時卡住或 crash
     def _search_thread(self, keyword):
+        import yt_dlp # 延遲載入
+        
         ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True, 'ignoreerrors': True, 'logger': QuietLogger()}
         results_data = []
         try:
@@ -669,7 +665,6 @@ class MusicPlayerApp(App):
         if target_file:
             self.engine.load_track(target_file)
         elif song_data['url']:
-            # 傳遞 item_widget 參數為 None (簡單化)
             self.cache_and_play(song_data['url'], song_data['title'], song_data['thumb'], None)
 
     def play_previous(self):
@@ -698,13 +693,15 @@ class MusicPlayerApp(App):
         self.current_playing_title = f"下載中：{title}..."
         threading.Thread(target=self._download_thread, args=(url, title, thumb_url, item_widget)).start()
 
+    # 【關鍵修正】延遲 import yt_dlp
     def _download_thread(self, url, title, thumb_url, item_widget):
+        import yt_dlp # 延遲載入
+        
         try:
             save_path = get_storage_path()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(save_path, f'{safe_title}.%(ext)s')
             
-            # 使用 contextlib 靜音輸出
             with open(os.devnull, 'w') as devnull:
                 with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
                     ydl_opts = {
@@ -713,7 +710,7 @@ class MusicPlayerApp(App):
                         'quiet': True, 
                         'noprogress': True, 
                         'logger': QuietLogger(),
-                        'nocheckcertificate': True # 雙重保險，忽略憑證檢查
+                        'nocheckcertificate': True
                     }
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([url])
@@ -721,7 +718,6 @@ class MusicPlayerApp(App):
             if thumb_url:
                 try:
                     local_thumb_path = os.path.join(save_path, f'{safe_title}.jpg')
-                    # 避免 ssl 報錯
                     ctx = ssl.create_default_context()
                     ctx.check_hostname = False
                     ctx.verify_mode = ssl.CERT_NONE
@@ -738,13 +734,12 @@ class MusicPlayerApp(App):
 
             if target_file:
                 Clock.schedule_once(lambda dt: self.engine.load_track(target_file), 0.1)
-                # item_widget 為 None 時跳過
                 if item_widget:
                     Clock.schedule_once(lambda dt: self._update_item_status(item_widget, "已下載"))
             else:
                 Clock.schedule_once(lambda dt: self._update_title("格式錯誤"))
         except Exception as e:
-            pass # 靜音錯誤，避免崩潰
+            pass
 
     def _update_item_status(self, widget, text):
         widget.status_text = text
