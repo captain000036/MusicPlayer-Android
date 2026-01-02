@@ -12,34 +12,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 設定 Java 17 (Buildozer 新版需求)
+      # Java 17
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 安裝系統依賴 (已加入 libunwind-dev 修復報錯)
+      # 系統依賴（Android 編譯必要）
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             git \
-            ffmpeg \
             libunwind-dev \
             libsdl2-dev \
             libsdl2-image-dev \
             libsdl2-mixer-dev \
             libsdl2-ttf-dev \
             libportmidi-dev \
-            libswscale-dev \
-            libavformat-dev \
-            libavcodec-dev \
             zlib1g-dev \
-            libgstreamer1.0-dev \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
             libffi-dev \
             libssl-dev \
             autoconf \
@@ -50,14 +43,20 @@ jobs:
             zip \
             unzip
 
-      # 安裝 Buildozer 和鎖定版本的 Cython
+      # Buildozer + Cython
       - name: Install Buildozer & Cython
         run: |
           pip3 install --upgrade pip
           pip3 install buildozer
           pip3 install "cython==0.29.36"
 
-      # 開始打包 (第一次跑會比較久，約 20 分鐘)
+      # 🔥 關鍵：強制清除舊 build
+      - name: Clean Buildozer
+        run: |
+          buildozer android clean || true
+          rm -rf .buildozer
+
+      # 正式編譯
       - name: Build with Buildozer
         run: |
           yes | buildozer android debug
