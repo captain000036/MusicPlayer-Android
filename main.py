@@ -1,51 +1,55 @@
 import os
+import threading
 import ssl
 import certifi
-import threading
-from kivy.config import Config
+import time
 
 # ==========================================
-# 1. 系統補丁 (放在最前面)
+# 0. Android 系統補丁 (防閃退、修輸入法)
 # ==========================================
-# 解決 SSL 錯誤
 try:
+    import certifi
     os.environ['SSL_CERT_FILE'] = certifi.where()
     ssl._create_default_https_context = ssl._create_unverified_context
-except: pass
+except ImportError:
+    pass
 
-# 解決圖片載入與搜歌被擋 (偽裝成瀏覽器)
-from kivy.loader import Loader
-Loader.headers = {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
-}
+from kivy.config import Config
 
-# 解決輸入法問題：不要強制 system 模式，改用預設並開啟視窗縮放
-# Config.set('kivy', 'keyboard_mode', 'system') # 移除這行，它常導致輸入法卡死
-Config.set('kivy', 'log_level', 'info')
+# 【輸入法修正】
+# 1. 強制 Kivy 使用系統輸入行為
+Config.set('kivy', 'keyboard_mode', 'system')
+# 2. 偽裝瀏覽器 (解決圖片不顯示)
+Config.set('network', 'useragent', 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36')
+
+# 開啟輸入法介面支援
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.relativelayout import RelativeLayout
-from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
 from kivy.uix.button import Button
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.image import AsyncImage
 from kivy.properties import StringProperty, ListProperty, BooleanProperty, NumericProperty
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 
-# 載入字體
-FONT_NAME = 'Roboto'
+# 字體設定
 try:
-    LabelBase.register(name='MyFont',
+    LabelBase.register(name='Roboto',
                        fn_regular='NotoSansTC-Regular.otf',
                        fn_bold='NotoSansTC-Bold.otf')
-    FONT_NAME = 'MyFont'
-except: pass
+    FONT_NAME = 'Roboto'
+except:
+    FONT_NAME = 'Roboto'
 
-# Android 路徑 (使用 App 私有路徑，避免權限閃退)
+# 路徑設定
 def get_storage_path():
     if platform == 'android':
         try:
@@ -59,7 +63,7 @@ def get_storage_path():
         return root
 
 # ==========================================
-# 核心引擎 (原生 MediaPlayer 穩定版)
+# 核心引擎 (回歸穩定 Polling 機制)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -67,61 +71,39 @@ class MusicEngine(EventDispatcher):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.player = None
+        self.is_monitoring = False
+        self.user_paused = False # 紀錄是否是使用者手動暫停
         
         if platform == 'android':
             try:
-                from jnius import autoclass, PythonJavaClass, java_method
+                from jnius import autoclass
                 self.MediaPlayer = autoclass('android.media.MediaPlayer')
-                self.AudioManager = autoclass('android.media.AudioManager')
-                
-                # 定義 Java 監聽器 (解決自動下一首與閃退)
-                class MyListener(PythonJavaClass):
-                    __javainterfaces__ = ['android/media/MediaPlayer$OnCompletionListener', 
-                                          'android/media/MediaPlayer$OnPreparedListener',
-                                          'android/media/MediaPlayer$OnErrorListener']
-                    __javacontext__ = 'app'
-
-                    def __init__(self, engine):
-                        super().__init__()
-                        self.engine = engine
-
-                    @java_method('(Landroid/media/MediaPlayer;)V')
-                    def onCompletion(self, mp):
-                        # 歌曲播完，觸發下一首
-                        Clock.schedule_once(lambda dt: self.engine.dispatch('on_track_finished'))
-
-                    @java_method('(Landroid/media/MediaPlayer;)V')
-                    def onPrepared(self, mp):
-                        # 準備完成，開始播放
-                        mp.start()
-                        Clock.schedule_once(lambda dt: self.engine.dispatch('on_playback_ready', True))
-
-                    @java_method('(Landroid/media/MediaPlayer;II)Z')
-                    def onError(self, mp, what, extra):
-                        # 攔截錯誤，防止閃退
-                        err_msg = f"Error: {what}, {extra}"
-                        Clock.schedule_once(lambda dt: self.engine.dispatch('on_error', err_msg))
-                        return True # Return True to indicate we handled the error
-
-                self.listener = MyListener(self)
                 self.player = self.MediaPlayer()
-                self.player.setOnCompletionListener(self.listener)
-                self.player.setOnPreparedListener(self.listener)
-                self.player.setOnErrorListener(self.listener)
-                
             except Exception as e:
                 print(f"Init Error: {e}")
 
     def load_track(self, filepath):
-        if not self.player: 
-            self.dispatch('on_playback_ready', True) # 電腦版模擬成功
+        if not self.player:
+            self.dispatch('on_playback_ready', True)
             return
 
         try:
+            # 重置狀態
+            self.stop_monitor()
+            if self.player.isPlaying(): self.player.stop()
             self.player.reset()
+            
+            # 設定來源並準備
             self.player.setDataSource(filepath)
-            # 【關鍵】使用 prepareAsync 防止主線程卡死閃退
-            self.player.prepareAsync() 
+            self.player.prepare() 
+            self.player.start()
+            
+            # 重置標記
+            self.user_paused = False
+            self.dispatch('on_playback_ready', True)
+            
+            # 啟動自動下一首檢查
+            self.start_monitor()
         except Exception as e:
             self.dispatch('on_error', str(e))
 
@@ -130,18 +112,55 @@ class MusicEngine(EventDispatcher):
         try:
             if self.player.isPlaying():
                 self.player.pause()
+                self.user_paused = True # 標記為手動暫停
                 return False
             else:
                 self.player.start()
+                self.user_paused = False # 標記為播放中
+                self.start_monitor()
                 return True
         except: return False
+
+    def stop(self):
+        self.stop_monitor()
+        self.user_paused = True
+        if self.player and self.player.isPlaying():
+            self.player.stop()
+
+    # --- 穩定版監聽器 (解決自動下一首) ---
+    def start_monitor(self):
+        self.is_monitoring = True
+        Clock.unschedule(self._check_completion)
+        Clock.schedule_interval(self._check_completion, 1) # 每秒檢查
+
+    def stop_monitor(self):
+        self.is_monitoring = False
+        Clock.unschedule(self._check_completion)
+
+    def _check_completion(self, dt):
+        if not self.player: return
+        try:
+            # 邏輯：如果現在「沒在播」而且「不是使用者按暫停」，那就是播完了
+            is_playing = self.player.isPlaying()
+            
+            if not is_playing and not self.user_paused:
+                # 再次確認進度是否接近尾聲 (避免剛載入時的誤判)
+                current = self.player.getCurrentPosition()
+                duration = self.player.getDuration()
+                
+                # 如果總長度大於0，且已經播超過 90% 或 剩不到 1 秒
+                if duration > 0 and (current >= duration - 1000):
+                    self.stop_monitor()
+                    self.dispatch('on_track_finished')
+        except:
+            pass
 
     def on_playback_ready(self, success): pass
     def on_track_finished(self): pass
     def on_error(self, error): pass
 
 # ==========================================
-# KV 介面 (100% 保留你的原始設計)
+# KV 介面 (完全保留原版)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -533,16 +552,17 @@ class MusicPlayerApp(App):
     theme_card_bg = ListProperty([0.07, 0.07, 0.07, 1])
     theme_accent_color = ListProperty([0.11, 0.72, 0.32, 1])
     
-    list_title = StringProperty("搜尋結果")
+    list_title = StringProperty("搜尋結果 (點擊即播)")
     current_playing_title = StringProperty("尚未播放")
     is_playing = BooleanProperty(False)
+    
     current_song_index = -1
     yt_dlp_module = None
     
     def build(self):
         self.engine = MusicEngine()
         self.engine.bind(on_playback_ready=self.on_engine_ready)
-        self.engine.bind(on_track_finished=self.on_track_finished) # 自動下一首
+        self.engine.bind(on_track_finished=self.on_track_finished) # 綁定下一首
         self.engine.bind(on_error=self.on_engine_error)
         self.apply_spotify_theme()
         if platform == 'android':
@@ -560,13 +580,16 @@ class MusicPlayerApp(App):
             self.current_playing_title = f"載入失敗: {e}"
 
     def on_engine_ready(self, instance, success):
-        self.is_playing = True
+        if success: self.is_playing = True
+        else: 
+            self.current_playing_title = "播放失敗"
+            self.is_playing = False
 
     def on_track_finished(self, instance):
         self.play_next()
 
     def on_engine_error(self, instance, error):
-        self.current_playing_title = str(error)
+        self.current_playing_title = "錯誤: 檔案無法播放"
         print(f"Engine Error: {error}")
 
     def toggle_theme(self):
@@ -609,12 +632,12 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         if not self.yt_dlp_module: return
+        # 修正：懶人載入 + 50首 + 忽略錯誤
         try:
             import yt_dlp
-            # 修正：搜尋數量改為 50
             ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True, 'ignoreerrors': True}
             results_data = []
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"ytsearch50:{keyword}", download=False)
                 if info and 'entries' in info:
                     for i, entry in enumerate(info['entries']):
@@ -668,7 +691,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(save_path, f'{safe_title}.%(ext)s')
             
-            # 修正：強制只抓音訊，防止轉檔閃退
+            # 下載防閃退 (強制 m4a, 忽略證書)
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
@@ -676,7 +699,7 @@ class MusicPlayerApp(App):
                 'nocheckcertificate': True
             }
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with self.yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
             
             target_file = None
