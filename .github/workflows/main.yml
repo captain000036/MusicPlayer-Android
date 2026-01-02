@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 釋放磁碟空間 (避免打包失敗)
+      # 2. 釋放磁碟空間 (Android 打包必備)
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -26,9 +26,9 @@ jobs:
           swap-storage: true
 
       # 3. 使用 Buildozer Action 打包
-      # 【修正點】這裡加上了 @v1
+      # 修正點：拿掉多餘的 -v1，正確指向倉庫
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action-v1@v1
+        uses: ArtemSBulgakov/buildozer-action@v1
         id: buildozer
         with:
           command: buildozer android debug
