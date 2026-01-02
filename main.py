@@ -6,9 +6,8 @@ import urllib.request
 import ssl
 
 # ==========================================
-# 0. Android 救命補丁 (必須放在最上面)
+# 0. Android 救命補丁
 # ==========================================
-# 解決 yt-dlp 在手機上無法連線 HTTPS 的問題
 try:
     import certifi
     os.environ['SSL_CERT_FILE'] = certifi.where()
@@ -17,29 +16,25 @@ except ImportError:
     pass
 
 # ==========================================
-# 1. 環境與 Log 設定
+# 1. 環境設定
 # ==========================================
 from kivy.config import Config
 
-# 強制使用系統原生鍵盤
 Config.set('kivy', 'keyboard_mode', 'system')
 Config.set('kivy', 'keyboard_layout', 'system')
 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 os.environ['KIVY_GL_BACKEND'] = 'angle_sdl2'
-
 Config.set('kivy', 'log_enable', '1')
-Config.set('kivy', 'log_maxfiles', '5')
 Config.set('kivy', 'log_level', 'info')
-
-# 避免介面太小
 Config.set('graphics', 'width', '360')
 Config.set('graphics', 'height', '640')
 Config.set('graphics', 'resizable', '1')
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 Config.set('network', 'useragent', 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36')
 
-# ⚠️ 注意：這裡不要 import yt_dlp，改到後面用到的時候再 import
+# ⚠️ 修正：這裡已經移除 import yt_dlp，防止啟動閃退
+
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
@@ -70,7 +65,7 @@ except Exception as e:
 def get_storage_path():
     if platform == 'android':
         from android.storage import primary_external_storage_path
-        # 改回較安全的 Download 路徑
+        # 使用 Download 資料夾，權限最寬鬆
         root_path = os.path.join(primary_external_storage_path(), 'Download', 'MusicPlayer')
     else:
         root_path = os.path.join(os.getcwd(), 'Music')
@@ -84,7 +79,7 @@ class QuietLogger:
     def warning(self, msg): pass
     def error(self, msg): print(f"[YTDLP_ERROR] {msg}")
 
-# 核心架構：MusicEngine
+# 核心架構
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
 
@@ -109,7 +104,6 @@ class MusicEngine(EventDispatcher):
 
     def _real_load(self, filepath):
         try:
-            # SoundLoader 依賴 ffpyplayer，這也是可能閃退的點，但通常是因為 requirements 沒寫
             self.sound = SoundLoader.load(filepath)
             if self.sound:
                 self.sound.bind(on_stop=self._on_stop_callback)
@@ -141,7 +135,7 @@ class MusicEngine(EventDispatcher):
     def on_track_finished(self): pass
     def on_error(self, error): pass
 
-# KV 介面設計 (維持不變)
+# KV 介面設計 (維持原樣)
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
 
@@ -623,13 +617,12 @@ class MusicPlayerApp(App):
         self.root.ids.search_input.focus = False
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
-    # 【關鍵修正】延遲 import yt_dlp，防止啟動時卡住或 crash
+    # ⚠️ 修正：這裡才 import yt_dlp
     def _search_thread(self, keyword):
-        import yt_dlp # 延遲載入
-        
-        ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True, 'ignoreerrors': True, 'logger': QuietLogger()}
-        results_data = []
         try:
+            import yt_dlp
+            ydl_opts = {'quiet': True, 'extract_flat': True, 'noplaylist': True, 'ignoreerrors': True, 'logger': QuietLogger()}
+            results_data = []
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"ytsearch100:{keyword}", download=False)
                 if info and 'entries' in info:
@@ -638,8 +631,9 @@ class MusicPlayerApp(App):
                             vid = entry.get('id', '')
                             thumb_url = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else ''
                             results_data.append({'title': entry.get('title', 'Unknown'), 'url': entry.get('url', ''), 'thumb': thumb_url, 'status_text': 'YouTube 音樂', 'index': i})
-        except Exception: pass
-        Clock.schedule_once(lambda dt: self._update_list(results_data))
+            Clock.schedule_once(lambda dt: self._update_list(results_data))
+        except Exception as e:
+            print(f"Search Error: {e}")
 
     def _update_list(self, data):
         self.root.ids.rv.data = data
@@ -693,11 +687,10 @@ class MusicPlayerApp(App):
         self.current_playing_title = f"下載中：{title}..."
         threading.Thread(target=self._download_thread, args=(url, title, thumb_url, item_widget)).start()
 
-    # 【關鍵修正】延遲 import yt_dlp
+    # ⚠️ 修正：這裡才 import yt_dlp
     def _download_thread(self, url, title, thumb_url, item_widget):
-        import yt_dlp # 延遲載入
-        
         try:
+            import yt_dlp
             save_path = get_storage_path()
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(save_path, f'{safe_title}.%(ext)s')
