@@ -1,55 +1,44 @@
 [app]
 
-# (1) 應用程式名稱與版本
+# 1. 基本資訊
 title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
-version = 0.4
-
-# (2) 程式碼與資源位置
 source.dir = .
-# 【關鍵修正】這裡必須包含 otf, ttf (解決亂碼) 以及 json (若有設定檔)
+version = 1.0
+
+# 2. 【絕對關鍵】資源副檔名
+# 一定要包含 otf, ttf，否則你的介面會全是亂碼
+# 包含 json 是為了以防你有設定檔
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 核心依賴庫 (Requirements)
-# 【關鍵修正】
-# 1. 加入 openssl, certifi -> 解決圖片顯示全黑、無法下載的問題 (HTTPS 支援)
-# 2. 加入 pyjnius -> 讓你的 Python 可以呼叫 Android Java (MediaPlayer)
-# 3. 加入 android -> 基礎依賴
-# 4. 保留 cython 固定版本 -> 避免編譯失敗
-requirements = python3,kivy,android,cython==0.29.36,yt-dlp,requests,mutagen,openssl,certifi,pyjnius,pillow,ffpyplayer,ffpyplayer_codecs,sdl2_image
+# 3. 【核心依賴庫】(Requirements)
+# python3, kivy: 基礎
+# android: 系統呼叫
+# yt-dlp: 下載核心
+# openssl, certifi: 解決 HTTPS 連線失敗 (沒這個無法下載)
+# ffpyplayer, ffpyplayer_codecs: 解決 SoundLoader 播放閃退或無聲 (Kivy 官方推薦)
+# libffi, pyjnius: 處理 Android 權限路徑
+requirements = python3,kivy,android,yt-dlp,mutagen,openssl,certifi,ffpyplayer,ffpyplayer_codecs,libffi,pyjnius,requests
 
-# (4) 顯示與方向
+# 4. 顯示設定
 orientation = portrait
 fullscreen = 0
-# 【關鍵修正】解決鍵盤遮擋輸入框的問題
+# 【輸入法修正】讓鍵盤彈出時視窗會縮放，不會遮住輸入框
 android.window_softinput_mode = resize
 
-# (5) 權限設定 (Permissions)
-# 包含網路、儲存讀寫、喚醒鎖(避免播歌時休眠)
-android.permissions = INTERNET,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK,ACCESS_NETWORK_STATE
+# 5. 權限設定 (網路 + 儲存 + 喚醒鎖)
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-# (6) Android API 設定
-# 建議升級到 33 (Android 13)，相容性較好，minapi 21 支援到 Android 5.0
+# 6. Android 版本設定 (Google Play 標準)
 android.api = 33
 android.minapi = 21
-android.accept_sdk_license = True
-android.entrypoint = org.kivy.android.PythonActivity
-
-# (7) 架構設定
-# 目前主流手機都是 arm64-v8a，若要支援舊手機可加上 armeabi-v7a
 android.archs = arm64-v8a
 
-# 使用最新分支
-p4a.branch = master
-
-# (8) 啟動圖與圖示 (若你有準備圖片，請取消註解並確認檔名)
-# icon.filename = %(source.dir)s/icon.png
-# presplash.filename = %(source.dir)s/presplash.png
+# 7. 啟動點
+android.entrypoint = org.kivy.android.PythonActivity
+android.accept_sdk_license = True
 
 [buildozer]
-
-# Log 等級 (2 = Debug，打包失敗時可以看到詳細原因)
 log_level = 2
 warn_on_root = 1
-
