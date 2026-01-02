@@ -13,8 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 🔥【關鍵修正】釋放磁碟空間
-      # Android 打包極度佔用空間，沒有這一步很高機率會報錯 "No space left on device"
+      # 2. 釋放磁碟空間 (避免打包失敗)
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -27,10 +26,9 @@ jobs:
           swap-storage: true
 
       # 3. 使用 Buildozer Action 打包
-      # 這個 Action 已經內建了所有需要的依賴庫 (Cython, SDK, NDK, Python, Java)
-      # 它會自動讀取你的 buildozer.spec 進行打包
+      # 【修正點】這裡加上了 @v1
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action-v1
+        uses: ArtemSBulgakov/buildozer-action-v1@v1
         id: buildozer
         with:
           command: buildozer android debug
