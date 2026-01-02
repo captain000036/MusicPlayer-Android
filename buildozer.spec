@@ -11,6 +11,7 @@ source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
 # 3. 依賴庫 (無 ffmpeg, 有 pyjnius)
 requirements = python3,kivy,android,yt-dlp,mutagen,openssl,certifi,pyjnius,requests,pillow,sdl2_image
+android.window_softinput_mode = resize
 
 # 4. 顯示與權限
 orientation = portrait
@@ -29,3 +30,4 @@ android.accept_sdk_license = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
+
