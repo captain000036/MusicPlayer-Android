@@ -26,9 +26,9 @@ jobs:
           swap-storage: true
 
       # 3. 使用 Buildozer Action 打包
-      # 【關鍵修正】這裡修正了倉庫名稱，去掉了多餘的 "-v1"
+      # 【關鍵修正】將 @v1 改為 @master，解決 Docker 映像檔遺失的問題
       - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
+        uses: ArtemSBulgakov/buildozer-action@master
         id: buildozer
         with:
           command: buildozer android debug
