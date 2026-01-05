@@ -1,31 +1,28 @@
 [app]
-# (1) 應用程式名稱
 title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 1.0
+version = 2.2
 
-# (2) 資源副檔名 (確保字體有被打包)
+# 檔案過濾
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【防閃退關鍵修正】依賴庫清單
-# ---------------------------------------------------------------------------
-# 新增: sqlite3 (yt-dlp 必備，缺了會閃退)
-# 新增: pycryptodome (yt-dlp 解密必備，缺了會閃退)
-# ---------------------------------------------------------------------------
-requirements = python3,kivy,android,yt-dlp,mutagen,openssl,certifi,pyjnius,requests,pillow,sdl2_image,libffi,sqlite3,pycryptodome
+# 【關鍵修正】依賴庫清單
+# 移除了 sqlite3 (避免系統衝突導致秒退)
+# 移除了 pycryptodome (避免編譯錯誤)
+# 加入了 cffi, brotli (yt-dlp 網路依賴)
+requirements = python3,kivy,android,yt-dlp,mutagen,openssl,certifi,pyjnius,requests,pillow,sdl2_image,libffi,cffi,brotli
 
-# (4) 顯示設定
+# 顯示設定
 orientation = portrait
 fullscreen = 0
-# 輸入法修正
 android.window_softinput_mode = resize
 
-# (5) 權限設定
+# 權限
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-# (6) Android API 設定
+# Android 設定
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a
