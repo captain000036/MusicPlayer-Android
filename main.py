@@ -2,16 +2,14 @@ import os
 import threading
 import ssl
 import certifi
-import time
 from kivy.config import Config
 
-# 0. 系統補丁
+# 1. 系統補丁：解決 HTTPS 與 輸入法
 try:
     os.environ['SSL_CERT_FILE'] = certifi.where()
     ssl._create_default_https_context = ssl._create_unverified_context
 except: pass
 
-# 偽裝瀏覽器 & 輸入法修正
 Config.set('network', 'useragent', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36')
 Config.set('kivy', 'keyboard_mode', 'system')
 os.environ['SDL_IME_SHOW_UI'] = '1'
@@ -30,13 +28,13 @@ from kivy.utils import platform
 from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 
-# 字體
+# 2. 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: FONT_NAME = 'Roboto'
 
-# 路徑
+# 3. 路徑設定
 def get_storage_path():
     if platform == 'android':
         try:
@@ -45,9 +43,10 @@ def get_storage_path():
         except: return "/sdcard/Download"
     return os.path.join(os.getcwd(), 'Music')
 
-# 音樂引擎
+# 4. 音樂引擎 (原生播放器)
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.player = None
@@ -71,7 +70,8 @@ class MusicEngine(EventDispatcher):
             self.user_paused = False
             self.dispatch('on_playback_ready', True)
             self.start_monitor()
-        except Exception as e: self.dispatch('on_error', str(e))
+        except Exception as e:
+            self.dispatch('on_error', str(e))
 
     def pause_resume(self):
         if not self.player: return False
@@ -94,12 +94,14 @@ class MusicEngine(EventDispatcher):
     def start_monitor(self):
         Clock.unschedule(self._check)
         Clock.schedule_interval(self._check, 1)
+        
     def stop_monitor(self):
         Clock.unschedule(self._check)
     
     @mainthread
     def _check(self, dt):
         if self.player and not self.player.isPlaying() and not self.user_paused:
+            # 播放結束判定
             if self.player.getCurrentPosition() >= self.player.getDuration() - 1000:
                 self.stop_monitor()
                 self.dispatch('on_track_finished')
@@ -108,7 +110,7 @@ class MusicEngine(EventDispatcher):
     def on_track_finished(self): pass
     def on_error(self, e): pass
 
-# KV 介面
+# 5. 介面設計 (雙介面)
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
 <AutoScrollLabel>:
@@ -335,7 +337,7 @@ BoxLayout:
             Widget:
 """
 
-# App 邏輯
+# 6. App 主程式
 class AutoScrollLabel(ScrollView):
     text, color, font_size = StringProperty(''), ListProperty([1,1,1,1]), StringProperty('16sp')
     def on_kv_post(self, w):
@@ -402,10 +404,12 @@ class MusicPlayerApp(App):
         threading.Thread(target=self._search, args=(kw,)).start()
 
     def _search(self, kw):
+        # 【關鍵防禦】只在需要時才 import yt_dlp，防止啟動崩潰
         try:
-            # 延遲 import，防止啟動時閃退
             import yt_dlp
-            with yt_dlp.YoutubeDL({'quiet':True, 'extract_flat':True, 'ignoreerrors':True}) as ydl:
+            # 使用最保守的參數
+            ydl_opts = {'quiet':True, 'extract_flat':True, 'ignoreerrors':True, 'nocheckcertificate':True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"ytsearch50:{kw}", download=False)
                 res = [{'title':e['title'], 'url':e['url'], 'thumb':e.get('thumbnail',''), 'status_text':'YouTube', 'index':i} for i,e in enumerate(info.get('entries',[])) if e]
                 Clock.schedule_once(lambda dt: setattr(self.root.ids.rv, 'data', res))
@@ -433,12 +437,13 @@ class MusicPlayerApp(App):
             folder = get_storage_path()
             if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
             out = os.path.join(folder, f'{title}.%(ext)s')
+            # 使用 bestaudio，不合併，確保 Android 能播
             with yt_dlp.YoutubeDL({'format':'bestaudio[ext=m4a]/best', 'outtmpl':out, 'quiet':True, 'nocheckcertificate':True}) as ydl:
                 ydl.download([url])
             for f in os.listdir(folder):
                 if title in f: Clock.schedule_once(lambda dt: self.engine.load_track(os.path.join(folder,f))); break
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"錯誤:{e}"))
+            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"下載失敗:{str(e)[:15]}"))
 
     def play_next(self): self.play_manager(self.current_song_index + 1)
     def play_previous(self): self.play_manager(self.current_song_index - 1)
