@@ -1,70 +1,35 @@
-name: Build Android APK
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+[app]
+title = MusicPlayer
+package.name = musicplayer
+package.domain = org.test
+source.dir = .
+version = 2.2
 
-jobs:
-  build:
-    # 使用 Ubuntu 22.04 以確保 Python 3.10 相容性
-    runs-on: ubuntu-22.04
+# 檔案過濾
+source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+# 【關鍵修正】依賴庫清單
+# 移除了 sqlite3 (避免系統衝突導致秒退)
+# 移除了 pycryptodome (避免編譯錯誤)
+# 加入了 cffi, brotli (yt-dlp 網路依賴)
+requirements = python3,kivy,android,yt-dlp,mutagen,openssl,certifi,pyjnius,requests,pillow,sdl2_image,libffi,cffi,brotli
 
-      # 1. 釋放磁碟空間 (這步沒做一定會空間不足失敗)
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+# 顯示設定
+orientation = portrait
+fullscreen = 0
+android.window_softinput_mode = resize
 
-      # 2. 設定 Java 17
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+# 權限
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-      # 3. 設定 Python 3.10
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+# Android 設定
+android.api = 33
+android.minapi = 21
+android.archs = arm64-v8a
+android.entrypoint = org.kivy.android.PythonActivity
+android.accept_sdk_license = True
+p4a.branch = master
 
-      # 4. 安裝系統依賴 (手動補齊圖片與編譯工具)
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential git zip unzip autoconf libtool pkg-config \
-            libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev \
-            libssl-dev zlib1g-dev \
-            libjpeg-dev libpng-dev libfreetype6-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-            libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
-
-      # 5. 安裝 Buildozer
-      - name: Install Buildozer
-        run: |
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.36
-
-      # 6. 開始打包 (使用 yes 同意 SDK 授權)
-      - name: Build with Buildozer
-        run: |
-          yes | buildozer android debug
-
-      # 7. 上傳 APK
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MusicPlayer-APK
-          path: bin/*.apk
-          retention-days: 3
+[buildozer]
+log_level = 2
+warn_on_root = 1
