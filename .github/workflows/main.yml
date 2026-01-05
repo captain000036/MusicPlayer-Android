@@ -6,14 +6,14 @@ on:
 
 jobs:
   build:
-    # 使用 Ubuntu 22.04 (比 latest 穩定，避免 Python 版本過新導致的相容性問題)
+    # 使用 Ubuntu 22.04 以確保 Python 3.10 相容性
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. 釋放磁碟空間 (這步沒做一定失敗)
+      # 1. 釋放磁碟空間 (這步沒做一定會空間不足失敗)
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -25,21 +25,20 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      # 2. 設定 Java 17 (Buildozer 建議版本)
+      # 2. 設定 Java 17
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 3. 設定 Python 3.10 (最穩定的 Kivy 打包版本)
+      # 3. 設定 Python 3.10
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # 4. 安裝系統依賴 (手動安裝所有需要的 Linux 套件)
-      # 包含圖片處理、音訊處理、編譯工具
+      # 4. 安裝系統依賴 (手動補齊圖片與編譯工具)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -47,17 +46,17 @@ jobs:
             build-essential git zip unzip autoconf libtool pkg-config \
             libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev \
             libssl-dev zlib1g-dev \
+            libjpeg-dev libpng-dev libfreetype6-dev \
             libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
             libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
 
-      # 5. 安裝 Buildozer 和 Cython
+      # 5. 安裝 Buildozer
       - name: Install Buildozer
         run: |
           pip install --upgrade pip
           pip install buildozer cython==0.29.36
 
-      # 6. 開始打包
-      # yes 命令會自動同意 Android SDK 的授權條款
+      # 6. 開始打包 (使用 yes 同意 SDK 授權)
       - name: Build with Buildozer
         run: |
           yes | buildozer android debug
