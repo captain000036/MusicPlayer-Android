@@ -1,16 +1,17 @@
 import os
 import threading
 import time
+# 注意：這裡不 import requests 或 yt_dlp，防止啟動崩潰
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統安全啟動區
+# 1. 系統層級設定
 # ==========================================
-# 輸入法交給系統管理 (解決無法切換中文)
+# 輸入法修正：交給 Android 系統 (解決中文輸入)
 Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝標頭
+# 偽裝瀏覽器 (解決 YouTube 阻擋)
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -31,14 +32,15 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體載入 (失敗則使用預設，防止閃退)
+# 2. 字體載入 (失敗自動降級，防止崩潰)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
+    print("Font load failed, using system font.")
     FONT_NAME = 'Roboto'
 
-# 路徑管理
+# 3. 路徑管理 (跨平台相容)
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -53,7 +55,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 2. 音樂引擎
+# 4. 音樂引擎 (Native Player)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -119,7 +121,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (Spotify 風格)
+# 5. KV 介面 (Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -224,8 +226,6 @@ KV_CODE = f"""
     bold: True
     background_normal: ''
     background_color: 0, 0, 0, 0
-    font_size: '18sp'
-    bold: True
     color: [1, 1, 1, 1]
     text_size: self.size
     halign: 'center'
@@ -270,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 本地圖片顯示
+        # 關鍵：使用 Image 讀取本地圖片，解決 AsyncImage 閃退問題
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -465,7 +465,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 4. 邏輯核心 (延遲載入)
+# 6. App 邏輯核心 (延遲載入 + 安全下載)
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -536,7 +536,7 @@ class MusicPlayerApp(App):
 
     @mainthread
     def on_engine_error(self, instance, error):
-        self.current_playing_title = "播放錯誤"
+        self.current_playing_title = "播放錯誤 (請重試)"
 
     def toggle_theme(self):
         self.is_spotify = not self.is_spotify
@@ -569,7 +569,6 @@ class MusicPlayerApp(App):
                     title = os.path.splitext(f)[0]
                     thumb_path = os.path.join(cache_dir, f"{title}.jpg")
                     thumb = thumb_path if os.path.exists(thumb_path) else ''
-                    
                     local_songs.append({
                         'title': title, 'url': '', 'thumb': thumb, 
                         'status_text': '[本機] 已下載', 'index': len(local_songs)
@@ -585,9 +584,10 @@ class MusicPlayerApp(App):
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
     def _search_thread(self, keyword):
-        # 防閃退：延遲載入所有網路模組
+        # 防閃退：所有網路動作都在這裡才 import
         try:
             import requests
+            import ssl
             import yt_dlp
             try: requests.packages.urllib3.disable_warnings()
             except: pass
@@ -605,7 +605,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片到本地
+                            # 下載圖片
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -614,12 +614,10 @@ class MusicPlayerApp(App):
                                 except: pass
                             
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
-
                             results_data.append({
                                 'title': title, 'url': entry.get('url', ''), 
                                 'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
                             })
-            
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
@@ -640,6 +638,7 @@ class MusicPlayerApp(App):
         safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
         target_file = None
         
+        # 找本地檔案
         for f in os.listdir(folder):
             if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
                 target_file = os.path.join(folder, f)
@@ -661,6 +660,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
+            # 使用最穩定的 m4a 格式
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
@@ -677,10 +677,10 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(folder, f)
                     break
             
+            # 備份縮圖
             if thumb_path and os.path.exists(thumb_path):
                 import shutil
-                try:
-                    shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
+                try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
                 except: pass
 
             if target_file:
