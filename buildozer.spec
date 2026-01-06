@@ -1,31 +1,34 @@
 [app]
-# 應用名稱
+# (1) 應用名稱
 title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 8.0
+version = 9.0
 
-# 檔案過濾
+# (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【關鍵依賴 - 輕量穩定版】
-# 1. 移除了 pillow (解決啟動秒退)
-# 2. 移除了 sqlite3 (解決系統衝突)
-# 3. 保留 sdl2_image (顯示圖片)
-# 4. 保留 requests, openssl (下載功能)
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
+# (3) 【回歸完整依賴】
+# 這是保證能「開啟 App」的最安全組合
+# python3, kivy, android: 核心
+# pyjnius: 播放器
+# yt-dlp, requests: 下載
+# pillow: 圖片處理 (必備！)
+# openssl, certifi: 網路安全
+# sqlite3: 資料庫 (yt-dlp 依賴)
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sqlite3,libffi
 
-# 顯示設定
+# (4) 顯示
 orientation = portrait
 fullscreen = 0
-# 【輸入法修正】
+# 【輸入法解決方案】使用 adjustPan
 android.window_softinput_mode = adjustPan
 
-# 權限
+# (5) 權限
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-# Android 設定
+# (6) API
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a
