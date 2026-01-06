@@ -1,17 +1,17 @@
 import os
 import threading
 import time
-# 這裡不 import requests/yt_dlp，防止啟動變慢或崩潰
+# 啟動時不載入網路庫，防止崩潰
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統補丁 (針對輸入法與網路)
+# 1. 系統設定
 # ==========================================
-# 【問題1解決】輸入法：交給 Android 系統接管，解決無法切換中文
-Config.set('kivy', 'keyboard_mode', '') 
+# 改回 'system'，這是配合 adjustPan 最穩定的設定
+Config.set('kivy', 'keyboard_mode', 'system')
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝瀏覽器 (解決 YouTube 阻擋)
+# 偽裝瀏覽器
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -32,7 +32,7 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體載入 (失敗自動降級，防止崩潰)
+# 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
@@ -54,7 +54,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 4. 音樂引擎 (Native Player)
+# 2. 音樂引擎 (Native Player)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -120,7 +120,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 5. KV 介面 (Spotify 風格)
+# 3. KV 介面 (Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -271,7 +271,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 【問題2解決】讀取本地圖片，解決圖片不顯示
+        # 顯示本地圖片
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -466,7 +466,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. App 主程式 Logic
+# 6. App 邏輯
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -587,7 +587,7 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         try:
-            # 延遲 import 網路庫
+            # 延遲載入，防止啟動崩潰
             import requests
             import ssl
             import yt_dlp
@@ -607,7 +607,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 【問題2解決】主動下載圖片到本地
+                            # 下載圖片
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -616,15 +616,10 @@ class MusicPlayerApp(App):
                                 except: pass
                             
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
-
                             results_data.append({
-                                'title': title, 
-                                'url': entry.get('url', ''), 
-                                'thumb': final_thumb, 
-                                'status_text': 'YouTube 音樂', 
-                                'index': i
+                                'title': title, 'url': entry.get('url', ''), 
+                                'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
                             })
-            
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
@@ -666,7 +661,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【問題3解決】強制下載原始音訊，不進行 FFmpeg 轉檔 (避免閃退)
+            # 關鍵修正：確保下載格式最穩定
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
