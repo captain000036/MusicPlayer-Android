@@ -3,21 +3,20 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 2.4
+version = 2.5
 
-# 來源檔案
+# 來源檔案 (確保包含 json 和字型)
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【依賴庫 - 防閃退終極版】
-# 只包含絕對必要的：
+# 依賴庫 (最穩定組合)
 # 1. 核心: python3, kivy, android
-# 2. 播放: pyjnius (原生播放器)
-# 3. 功能: yt-dlp, requests
-# 4. 圖片: pillow, sdl2_image
-# 5. SSL: openssl, certifi
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image
+# 2. 功能: yt-dlp, requests, pyjnius
+# 3. 圖片: pillow, sdl2_image
+# 4. 安全: openssl, certifi
+# 5. 系統: sqlite3 (yt-dlp 依賴), libffi
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi,sqlite3
 
-# 顯示設定
+# 顯示
 orientation = portrait
 fullscreen = 0
 android.window_softinput_mode = resize
