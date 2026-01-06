@@ -3,18 +3,17 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 3.1
+version = 3.2
 
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【關鍵修正】
-# 移除了 sqlite3 (解決秒閃退問題)
-# 保留 requests (解決圖片下載)
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi
+# 【極簡穩定列表】
+# 移除了所有二進位圖像庫 (改用 requests 存圖 + Kivy 原生讀取)
+# 移除了 sqlite3 (避免系統衝突)
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi
 
 orientation = portrait
 fullscreen = 0
-# 嘗試使用 adjustPan 解決輸入法遮擋
 android.window_softinput_mode = adjustPan
 
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
