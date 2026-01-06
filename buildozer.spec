@@ -3,12 +3,14 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 2.6
+version = 3.1
 
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【關鍵】加入 requests (下載圖片用)
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi,sqlite3
+# 【關鍵修正】
+# 移除了 sqlite3 (解決秒閃退問題)
+# 保留 requests (解決圖片下載)
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi
 
 orientation = portrait
 fullscreen = 0
