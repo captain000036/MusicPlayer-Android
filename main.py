@@ -1,17 +1,17 @@
 import os
 import threading
 import time
-# 啟動時不載入網路庫，防止崩潰
+# 啟動時不載入 heavy modules
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統設定
+# 1. 系統設定 (System Config)
 # ==========================================
-# 改回 'system'，這是配合 adjustPan 最穩定的設定
-Config.set('kivy', 'keyboard_mode', 'system')
+# 輸入法修正：強制交給 Android 系統
+Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝瀏覽器
+# 偽裝 User-Agent
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -32,14 +32,14 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體載入
+# 2. 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
     FONT_NAME = 'Roboto'
 
-# 路徑管理
+# 3. 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -54,7 +54,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 2. 音樂引擎 (Native Player)
+# 4. 音樂引擎 (Native Player)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -120,7 +120,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (Spotify 風格)
+# 5. KV 介面 (Spotify 完整版)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -271,7 +271,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 顯示本地圖片
+        # 關鍵：使用標準 Image 元件
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -466,7 +466,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. App 邏輯
+# 6. 邏輯核心
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -587,7 +587,7 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         try:
-            # 延遲載入，防止啟動崩潰
+            # 延遲載入網路庫，防止啟動崩潰
             import requests
             import ssl
             import yt_dlp
@@ -607,7 +607,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片
+                            # 下載圖片到本地 (解決 AsyncImage 閃退)
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -661,7 +661,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 關鍵修正：確保下載格式最穩定
+            # 強制下載原始格式，不轉檔 (解決播放閃退)
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
