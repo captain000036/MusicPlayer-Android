@@ -1,13 +1,13 @@
 import os
 import threading
 import time
-# 注意：這裡不 import requests 或 yt_dlp，防止啟動崩潰
+# 這裡不 import requests/yt_dlp，防止啟動變慢或崩潰
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統層級設定
+# 1. 系統補丁 (針對輸入法與網路)
 # ==========================================
-# 輸入法修正：交給 Android 系統 (解決中文輸入)
+# 【問題1解決】輸入法：交給 Android 系統接管，解決無法切換中文
 Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
@@ -32,15 +32,14 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 2. 字體載入 (失敗自動降級，防止崩潰)
+# 字體載入 (失敗自動降級，防止崩潰)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
-    print("Font load failed, using system font.")
     FONT_NAME = 'Roboto'
 
-# 3. 路徑管理 (跨平台相容)
+# 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -226,6 +225,8 @@ KV_CODE = f"""
     bold: True
     background_normal: ''
     background_color: 0, 0, 0, 0
+    font_size: '18sp'
+    bold: True
     color: [1, 1, 1, 1]
     text_size: self.size
     halign: 'center'
@@ -270,7 +271,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 關鍵：使用 Image 讀取本地圖片，解決 AsyncImage 閃退問題
+        # 【問題2解決】讀取本地圖片，解決圖片不顯示
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -465,7 +466,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. App 邏輯核心 (延遲載入 + 安全下載)
+# 6. App 主程式 Logic
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -569,6 +570,7 @@ class MusicPlayerApp(App):
                     title = os.path.splitext(f)[0]
                     thumb_path = os.path.join(cache_dir, f"{title}.jpg")
                     thumb = thumb_path if os.path.exists(thumb_path) else ''
+                    
                     local_songs.append({
                         'title': title, 'url': '', 'thumb': thumb, 
                         'status_text': '[本機] 已下載', 'index': len(local_songs)
@@ -584,8 +586,8 @@ class MusicPlayerApp(App):
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
     def _search_thread(self, keyword):
-        # 防閃退：所有網路動作都在這裡才 import
         try:
+            # 延遲 import 網路庫
             import requests
             import ssl
             import yt_dlp
@@ -605,7 +607,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片
+                            # 【問題2解決】主動下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -614,10 +616,15 @@ class MusicPlayerApp(App):
                                 except: pass
                             
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
+
                             results_data.append({
-                                'title': title, 'url': entry.get('url', ''), 
-                                'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
+                                'title': title, 
+                                'url': entry.get('url', ''), 
+                                'thumb': final_thumb, 
+                                'status_text': 'YouTube 音樂', 
+                                'index': i
                             })
+            
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
@@ -638,7 +645,6 @@ class MusicPlayerApp(App):
         safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
         target_file = None
         
-        # 找本地檔案
         for f in os.listdir(folder):
             if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
                 target_file = os.path.join(folder, f)
@@ -660,7 +666,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 使用最穩定的 m4a 格式
+            # 【問題3解決】強制下載原始音訊，不進行 FFmpeg 轉檔 (避免閃退)
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
@@ -677,7 +683,6 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(folder, f)
                     break
             
-            # 備份縮圖
             if thumb_path and os.path.exists(thumb_path):
                 import shutil
                 try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
