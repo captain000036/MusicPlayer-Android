@@ -1,25 +1,18 @@
 import os
 import threading
-import ssl
-import certifi
 import time
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統補丁 (System Patch)
+# 1. 系統補丁 (只做最安全的設定)
 # ==========================================
-try:
-    os.environ['SSL_CERT_FILE'] = certifi.where()
-    ssl._create_default_https_context = ssl._create_unverified_context
-except: pass
-
-# 偽裝成瀏覽器
-USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
-Config.set('network', 'useragent', USER_AGENT)
-
-# 輸入法修正：交給系統接管
+# 輸入法修正：交給 Android 系統接管
 Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
+
+# 偽裝 User-Agent
+USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
+Config.set('network', 'useragent', USER_AGENT)
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -36,9 +29,10 @@ from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 from kivy.loader import Loader
 
+# 設定 Loader
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 2. 字體載入 (防閃退)
+# 2. 字體載入 (使用系統字體作為備案)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
@@ -59,7 +53,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 4. 音樂引擎 (Native Player)
+# 4. 音樂引擎
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -125,7 +119,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 5. KV 介面 (保持您的設計)
+# 5. KV 介面 (雙介面)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -276,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 本地圖片顯示 (關鍵修復)
+        # 顯示本地圖片
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -471,7 +465,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. App 主程式 (Logic)
+# 6. App 主程式 Logic
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -588,15 +582,21 @@ class MusicPlayerApp(App):
         self.list_title = f"搜尋：{keyword}"
         self.root.ids.search_input.focus = False
         self.current_playing_title = "搜尋中..."
-        # 啟動線程
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
     def _search_thread(self, keyword):
+        # 【關鍵防禦】所有重型 import 都在這裡做，防止啟動時崩潰
         try:
-            # 【關鍵】在這裡才載入 requests 和 yt_dlp，防止啟動閃退
             import requests
+            import ssl
             import yt_dlp
             
+            # 手動設定 SSL (針對 requests)
+            try:
+                # 忽略警告
+                requests.packages.urllib3.disable_warnings()
+            except: pass
+
             cache_dir = get_path('Cache')
             ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
             
@@ -610,12 +610,12 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片到本地
+                            # 下載圖片
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
-                                    headers = {'User-Agent': USER_AGENT}
-                                    resp = requests.get(thumb_url, headers=headers, timeout=3, verify=False)
+                                    # requests 下載，verify=False 忽略憑證
+                                    resp = requests.get(thumb_url, timeout=3, verify=False)
                                     with open(local_thumb, 'wb') as f:
                                         f.write(resp.content)
                                 except: pass
@@ -632,7 +632,7 @@ class MusicPlayerApp(App):
             
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完成 (無結果)"))
+            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"搜尋完畢"))
 
     @mainthread
     def _update_list(self, data):
@@ -666,7 +666,6 @@ class MusicPlayerApp(App):
 
     def _download_thread(self, url, title, thumb_path):
         try:
-            # 在這裡才載入
             import yt_dlp
             folder = get_path('Music')
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
@@ -688,7 +687,6 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(folder, f)
                     break
             
-            # 備份圖片
             if thumb_path and os.path.exists(thumb_path):
                 import shutil
                 try:
@@ -720,8 +718,4 @@ class MusicPlayerApp(App):
         self.is_playing = is_playing
 
 if __name__ == '__main__':
-    # 全局錯誤攔截，防止閃退
-    try:
-        MusicPlayerApp().run()
-    except Exception as e:
-        print(f"CRITICAL ERROR: {e}")
+    MusicPlayerApp().run()
