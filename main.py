@@ -1,17 +1,16 @@
 import os
 import threading
 import time
-# 啟動時不載入 heavy modules
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統設定 (System Config)
+# 1. 系統設定 (解決輸入法與網路)
 # ==========================================
-# 輸入法修正：強制交給 Android 系統
-Config.set('kivy', 'keyboard_mode', '') 
+# 強制交給 Android 系統鍵盤
+Config.set('kivy', 'keyboard_mode', '')
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝 User-Agent
+# 偽裝瀏覽器
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -32,14 +31,14 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 2. 字體載入
+# 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
     FONT_NAME = 'Roboto'
 
-# 3. 路徑管理
+# 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -54,7 +53,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 4. 音樂引擎 (Native Player)
+# 2. 音樂引擎 (原生播放器)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -120,7 +119,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 5. KV 介面 (Spotify 完整版)
+# 3. KV 介面 (雙介面設計)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -271,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 關鍵：使用標準 Image 元件
+        # 使用標準 Image
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -466,7 +465,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. 邏輯核心
+# 4. 邏輯核心 (延遲載入 + 安全下載)
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -568,144 +567,4 @@ class MusicPlayerApp(App):
             for i, f in enumerate(os.listdir(folder)):
                 if f.endswith(('.m4a', '.mp3')):
                     title = os.path.splitext(f)[0]
-                    thumb_path = os.path.join(cache_dir, f"{title}.jpg")
-                    thumb = thumb_path if os.path.exists(thumb_path) else ''
-                    
-                    local_songs.append({
-                        'title': title, 'url': '', 'thumb': thumb, 
-                        'status_text': '[本機] 已下載', 'index': len(local_songs)
-                    })
-        self.root.ids.rv.data = local_songs
-
-    def search_music(self, keyword):
-        if not keyword: return
-        self.current_song_index = -1
-        self.list_title = f"搜尋：{keyword}"
-        self.root.ids.search_input.focus = False
-        self.current_playing_title = "搜尋中..."
-        threading.Thread(target=self._search_thread, args=(keyword,)).start()
-
-    def _search_thread(self, keyword):
-        try:
-            # 延遲載入網路庫，防止啟動崩潰
-            import requests
-            import ssl
-            import yt_dlp
-            try: requests.packages.urllib3.disable_warnings()
-            except: pass
-            
-            cache_dir = get_path('Cache')
-            ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
-            
-            results_data = []
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch20:{keyword}", download=False)
-                if info and 'entries' in info:
-                    for i, entry in enumerate(info['entries']):
-                        if entry:
-                            title = entry.get('title', 'Unknown')
-                            thumb_url = entry.get('thumbnail', '')
-                            video_id = entry.get('id', str(i))
-                            
-                            # 下載圖片到本地 (解決 AsyncImage 閃退)
-                            local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
-                            if thumb_url and not os.path.exists(local_thumb):
-                                try:
-                                    resp = requests.get(thumb_url, timeout=3, verify=False)
-                                    with open(local_thumb, 'wb') as f: f.write(resp.content)
-                                except: pass
-                            
-                            final_thumb = local_thumb if os.path.exists(local_thumb) else ''
-                            results_data.append({
-                                'title': title, 'url': entry.get('url', ''), 
-                                'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
-                            })
-            Clock.schedule_once(lambda dt: self._update_list(results_data))
-        except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
-
-    @mainthread
-    def _update_list(self, data):
-        self.root.ids.rv.data = data
-        self.current_playing_title = "請點擊播放"
-
-    def play_manager(self, index):
-        if index < 0 or index >= len(self.root.ids.rv.data): return
-        
-        self.current_song_index = index
-        data = self.root.ids.rv.data[index]
-        self.current_playing_title = f"準備播放: {data['title']}"
-        
-        folder = get_path('Music')
-        safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
-        target_file = None
-        
-        for f in os.listdir(folder):
-            if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
-                target_file = os.path.join(folder, f)
-                break
-        
-        if target_file:
-            self.engine.load_track(target_file)
-        elif data['url']:
-            self.cache_and_play(data['url'], data['title'], data['thumb'])
-
-    def cache_and_play(self, url, title, thumb_path):
-        self.current_playing_title = f"下載中..."
-        threading.Thread(target=self._download_thread, args=(url, title, thumb_path)).start()
-
-    def _download_thread(self, url, title, thumb_path):
-        try:
-            import yt_dlp
-            folder = get_path('Music')
-            safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
-            out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
-            
-            # 強制下載原始格式，不轉檔 (解決播放閃退)
-            ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/best', 
-                'outtmpl': out_tmpl, 
-                'quiet': True,
-                'nocheckcertificate': True
-            }
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            
-            target_file = None
-            for f in os.listdir(folder):
-                if safe_title in f:
-                    target_file = os.path.join(folder, f)
-                    break
-            
-            if thumb_path and os.path.exists(thumb_path):
-                import shutil
-                try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
-                except: pass
-
-            if target_file:
-                Clock.schedule_once(lambda dt: self.engine.load_track(target_file))
-                Clock.schedule_once(lambda dt: self._update_title(f"播放: {safe_title}"))
-            else:
-                Clock.schedule_once(lambda dt: self._update_title("下載失敗"))
-        except:
-            Clock.schedule_once(lambda dt: self._update_title("下載錯誤"))
-
-    @mainthread
-    def _update_title(self, text):
-        self.current_playing_title = text
-
-    def play_previous(self):
-        new_index = self.current_song_index - 1
-        self.play_manager(new_index)
-
-    def play_next(self):
-        new_index = self.current_song_index + 1
-        self.play_manager(new_index)
-
-    def toggle_play(self):
-        is_playing = self.engine.pause_resume()
-        self.is_playing = is_playing
-
-if __name__ == '__main__':
-    MusicPlayerApp().run()
+                    thumb_path = os.path.join(cache_dir, f"{
