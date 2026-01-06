@@ -1,29 +1,32 @@
 [app]
-# (1) App 名稱
+# (1) 應用程式名稱
 title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 4.0
+version = 5.0
 
-# (2) 檔案過濾
+# (2) 檔案包含設定
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【關鍵修正】依賴庫
-# 必須包含 pillow, sdl2_image (否則 Kivy 無法啟動介面 -> 秒退)
-# 必須包含 requests (下載圖片用)
-# 移除 sqlite3 (避免系統衝突)
+# (3) 【黃金依賴組合】
+# python3, kivy, android: 核心
+# pyjnius: 播放器
+# yt-dlp, requests: 下載功能
+# pillow, sdl2_image: 【關鍵】介面渲染 (缺了這個會秒退)
+# openssl, certifi: 網路安全
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi
 
 # (4) 顯示設定
 orientation = portrait
 fullscreen = 0
+# 【關鍵】解決輸入法遮擋與切換問題
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-# (6) Android 設定
+# (6) Android API
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a
