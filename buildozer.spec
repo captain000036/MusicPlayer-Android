@@ -3,20 +3,16 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 3.0
+version = 2.6
 
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 依賴庫
-# requests: 用來下載圖片 (解決圖片不顯示)
-# pyjnius: 原生播放器
-# openssl: HTTPS 支援
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi
+# 【關鍵】加入 requests (下載圖片用)
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi,sqlite3
 
 orientation = portrait
 fullscreen = 0
-
-# 【關鍵修正】改用 adjustPan，通常對 Kivy 輸入法支援更好
+# 嘗試使用 adjustPan 解決輸入法遮擋
 android.window_softinput_mode = adjustPan
 
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
