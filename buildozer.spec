@@ -3,28 +3,24 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 2.5
+version = 3.0
 
-# 來源檔案 (確保包含 json 和字型)
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 依賴庫 (最穩定組合)
-# 1. 核心: python3, kivy, android
-# 2. 功能: yt-dlp, requests, pyjnius
-# 3. 圖片: pillow, sdl2_image
-# 4. 安全: openssl, certifi
-# 5. 系統: sqlite3 (yt-dlp 依賴), libffi
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi,sqlite3
+# 依賴庫
+# requests: 用來下載圖片 (解決圖片不顯示)
+# pyjnius: 原生播放器
+# openssl: HTTPS 支援
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sdl2_image,libffi
 
-# 顯示
 orientation = portrait
 fullscreen = 0
-android.window_softinput_mode = resize
 
-# 權限
+# 【關鍵修正】改用 adjustPan，通常對 Kivy 輸入法支援更好
+android.window_softinput_mode = adjustPan
+
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
 
-# API
 android.api = 33
 android.minapi = 21
 android.archs = arm64-v8a
