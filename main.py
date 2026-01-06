@@ -4,13 +4,13 @@ import time
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統補丁 (只做最安全的設定)
+# 1. 系統安全啟動區
 # ==========================================
-# 輸入法修正：交給 Android 系統接管
+# 輸入法交給系統管理 (解決無法切換中文)
 Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝 User-Agent
+# 偽裝標頭
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -29,16 +29,16 @@ from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 from kivy.loader import Loader
 
-# 設定 Loader
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 2. 字體載入 (使用系統字體作為備案)
+# 字體載入 (失敗則使用預設，防止閃退)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
-except: FONT_NAME = 'Roboto'
+except: 
+    FONT_NAME = 'Roboto'
 
-# 3. 路徑管理
+# 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -53,7 +53,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 4. 音樂引擎
+# 2. 音樂引擎
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -119,7 +119,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 5. KV 介面 (雙介面)
+# 3. KV 介面 (Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -270,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 顯示本地圖片
+        # 本地圖片顯示
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -465,7 +465,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. App 主程式 Logic
+# 4. 邏輯核心 (延遲載入)
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -585,18 +585,13 @@ class MusicPlayerApp(App):
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
     def _search_thread(self, keyword):
-        # 【關鍵防禦】所有重型 import 都在這裡做，防止啟動時崩潰
+        # 防閃退：延遲載入所有網路模組
         try:
             import requests
-            import ssl
             import yt_dlp
-            
-            # 手動設定 SSL (針對 requests)
-            try:
-                # 忽略警告
-                requests.packages.urllib3.disable_warnings()
+            try: requests.packages.urllib3.disable_warnings()
             except: pass
-
+            
             cache_dir = get_path('Cache')
             ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
             
@@ -610,29 +605,24 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片
+                            # 下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
-                                    # requests 下載，verify=False 忽略憑證
                                     resp = requests.get(thumb_url, timeout=3, verify=False)
-                                    with open(local_thumb, 'wb') as f:
-                                        f.write(resp.content)
+                                    with open(local_thumb, 'wb') as f: f.write(resp.content)
                                 except: pass
                             
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
 
                             results_data.append({
-                                'title': title, 
-                                'url': entry.get('url', ''), 
-                                'thumb': final_thumb, 
-                                'status_text': 'YouTube 音樂', 
-                                'index': i
+                                'title': title, 'url': entry.get('url', ''), 
+                                'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
                             })
             
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"搜尋完畢"))
+            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
 
     @mainthread
     def _update_list(self, data):
