@@ -1,19 +1,5 @@
 import os
 import threading
-import time
-from kivy.config import Config
-
-# ==========================================
-# 1. 系統設定
-# ==========================================
-# 輸入法：交給系統 (解決中文問題)
-Config.set('kivy', 'keyboard_mode', '')
-os.environ['SDL_IME_SHOW_UI'] = '1'
-
-# 偽裝瀏覽器 (解決圖片/搜歌被擋)
-USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
-Config.set('network', 'useragent', USER_AGENT)
-
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
@@ -22,24 +8,22 @@ from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.properties import StringProperty, ListProperty, BooleanProperty, NumericProperty
+from kivy.properties import StringProperty, ListProperty, NumericProperty, BooleanProperty
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 from kivy.loader import Loader
+from kivy.config import Config
 
-# 設定圖片讀取器的 Header
-Loader.headers = {'User-Agent': USER_AGENT}
-
-# 字體載入 (失敗則使用預設)
+# 字體設定 (使用系統字體防崩潰)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
     FONT_NAME = 'Roboto'
 
-# 路徑管理
+# 路徑設定
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -54,7 +38,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 2. 音樂引擎
+# 音樂引擎
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -120,7 +104,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (Spotify 風格)
+# KV 介面 (雙介面)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -271,7 +255,6 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 圖片顯示
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -466,7 +449,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 4. 邏輯核心
+# App 邏輯
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -526,6 +509,13 @@ class MusicPlayerApp(App):
             from android.permissions import request_permissions, Permission
             request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
         return Builder.load_string(KV_CODE)
+
+    def on_start(self):
+        # 【修正1】在啟動後才設定輸入法，避免啟動時 Crash
+        try:
+            Config.set('kivy', 'keyboard_mode', '')
+            os.environ['SDL_IME_SHOW_UI'] = '1'
+        except: pass
 
     @mainthread
     def on_engine_ready(self, instance, success):
@@ -587,7 +577,7 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         try:
-            # 延遲載入網路庫
+            # 延遲載入，防止啟動崩潰
             import requests
             import yt_dlp
             
@@ -604,7 +594,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 下載圖片到本地
+                            # 【修正2】下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -658,13 +648,14 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【關鍵】強制禁止後製，只下載 bestaudio
+            # 【修正3】強制下載原始音訊 (m4a)，禁止轉檔
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
                 'quiet': True,
                 'nocheckcertificate': True,
-                'postprocessors': []
+                'postprocessors': [],
+                'keepvideo': True
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
