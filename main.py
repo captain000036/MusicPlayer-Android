@@ -1,17 +1,16 @@
 import os
 import threading
 import time
-# 啟動時不載入 yt_dlp，防止啟動變慢或崩潰
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統修正 (針對 Android)
+# 1. 系統設定
 # ==========================================
-# 【修正1】輸入法：設為空，讓 Android 系統接管
+# 輸入法：交給系統 (解決中文問題)
 Config.set('kivy', 'keyboard_mode', '')
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝
+# 偽裝瀏覽器 (解決圖片/搜歌被擋)
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -30,16 +29,17 @@ from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 from kivy.loader import Loader
 
+# 設定圖片讀取器的 Header
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體
+# 字體載入 (失敗則使用預設)
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
     FONT_NAME = 'Roboto'
 
-# 路徑
+# 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -120,7 +120,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面
+# 3. KV 介面 (Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -225,6 +225,8 @@ KV_CODE = f"""
     bold: True
     background_normal: ''
     background_color: 0, 0, 0, 0
+    font_size: '18sp'
+    bold: True
     color: [1, 1, 1, 1]
     text_size: self.size
     halign: 'center'
@@ -269,7 +271,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 【修正2】使用原生 Image 讀取本地圖片，不依賴網路
+        # 圖片顯示
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -568,6 +570,7 @@ class MusicPlayerApp(App):
                     title = os.path.splitext(f)[0]
                     thumb_path = os.path.join(cache_dir, f"{title}.jpg")
                     thumb = thumb_path if os.path.exists(thumb_path) else ''
+                    
                     local_songs.append({
                         'title': title, 'url': '', 'thumb': thumb, 
                         'status_text': '[本機] 已下載', 'index': len(local_songs)
@@ -586,10 +589,7 @@ class MusicPlayerApp(App):
         try:
             # 延遲載入網路庫
             import requests
-            import ssl
             import yt_dlp
-            try: requests.packages.urllib3.disable_warnings()
-            except: pass
             
             cache_dir = get_path('Cache')
             ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
@@ -604,7 +604,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 【修正2】下載圖片到本地
+                            # 下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -658,15 +658,13 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【修正3】強制下載原始音訊 (m4a)，禁止轉檔
+            # 【關鍵】強制禁止後製，只下載 bestaudio
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
                 'quiet': True,
                 'nocheckcertificate': True,
-                # 關鍵：確保不進行任何後製處理
-                'postprocessors': [],
-                'keepvideo': True
+                'postprocessors': []
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -678,7 +676,6 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(folder, f)
                     break
             
-            # 備份縮圖
             if thumb_path and os.path.exists(thumb_path):
                 import shutil
                 try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
