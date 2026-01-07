@@ -5,9 +5,9 @@ import time
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統設定 (System Config)
+# 1. 系統設定
 # ==========================================
-# 【解決問題1】輸入法：強制交給 Android 系統
+# 輸入法修正
 Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
@@ -20,6 +20,7 @@ from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.button import Button
+# 因為有 pillow，我們可以直接用 Image
 from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
@@ -32,7 +33,7 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體載入 (失敗自動降級)
+# 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
@@ -54,7 +55,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 2. 音樂引擎 (Native Player)
+# 2. 音樂引擎
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -120,7 +121,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (Spotify 風格)
+# 3. KV 介面
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -271,7 +272,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 【解決問題2】使用原生 Image 讀取本地檔案
+        # 讀取本地圖片
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -466,7 +467,7 @@ BoxLayout:
 """
 
 # ==========================================
-# 6. 邏輯核心
+# 4. 邏輯核心
 # ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
@@ -517,15 +518,20 @@ class MusicPlayerApp(App):
     current_song_index = -1
     
     def build(self):
-        self.engine = MusicEngine()
-        self.engine.bind(on_playback_ready=self.on_engine_ready)
-        self.engine.bind(on_track_finished=self.on_track_finished)
-        self.engine.bind(on_error=self.on_engine_error)
-        self.apply_spotify_theme()
-        if platform == 'android':
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
-        return Builder.load_string(KV_CODE)
+        try:
+            self.engine = MusicEngine()
+            self.engine.bind(on_playback_ready=self.on_engine_ready)
+            self.engine.bind(on_track_finished=self.on_track_finished)
+            self.engine.bind(on_error=self.on_engine_error)
+            self.apply_spotify_theme()
+            if platform == 'android':
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
+            return Builder.load_string(KV_CODE)
+        except Exception as e:
+            # 萬一連介面都載入失敗，至少印出錯誤
+            print(f"CRITICAL UI LOAD ERROR: {e}")
+            return Label(text=f"Error: {e}")
 
     @mainthread
     def on_engine_ready(self, instance, success):
@@ -607,7 +613,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 【問題2解決】主動下載圖片到本地
+                            # 下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -616,7 +622,6 @@ class MusicPlayerApp(App):
                                 except: pass
                             
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
-
                             results_data.append({
                                 'title': title, 'url': entry.get('url', ''), 
                                 'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
@@ -662,7 +667,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【問題3解決】強制下載最穩定的格式
+            # 關鍵：強制下載最穩定的格式
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
