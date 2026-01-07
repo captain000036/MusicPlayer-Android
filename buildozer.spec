@@ -4,19 +4,19 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 99.0
+version = 16.0
 
 # (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【絕對能跑的清單】
-# 這是當初能進畫面的那個版本
-# 只留 requests 用來下載圖片，sdl2_image 用來顯示
+# (3) 【成功啟動的依賴清單】
+# 這就是剛剛那張截圖能跑的關鍵配置，我們不動它
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 # (4) 顯示設定
 orientation = portrait
 fullscreen = 0
+# 【關鍵修正1：解決輸入法遮擋】
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
