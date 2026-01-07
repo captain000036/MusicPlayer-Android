@@ -4,24 +4,19 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 15.0
+version = 99.0
 
 # (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【成功版依賴清單】
-# 這是您上次成功截圖時的組合
-# python3, kivy, android: 核心
-# pyjnius: 播放
-# yt-dlp, requests: 下載
-# sdl2_image: 圖片 (不使用 pillow)
-# openssl, certifi: 網路
+# (3) 【絕對能跑的清單】
+# 這是當初能進畫面的那個版本
+# 只留 requests 用來下載圖片，sdl2_image 用來顯示
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 # (4) 顯示設定
 orientation = portrait
 fullscreen = 0
-# 【輸入法修正】
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
