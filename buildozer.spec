@@ -4,25 +4,22 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 9.0
+version = 10.0
 
 # (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【回歸完整依賴】
-# 這是保證能「開啟 App」的最安全組合
-# python3, kivy, android: 核心
-# pyjnius: 播放器
-# yt-dlp, requests: 下載
-# pillow: 圖片處理 (必備！)
-# openssl, certifi: 網路安全
-# sqlite3: 資料庫 (yt-dlp 依賴)
-requirements = python3,kivy,android,pyjnius,yt-dlp,requests,pillow,openssl,certifi,sqlite3,libffi
+# (3) 【極簡穩定依賴】
+# 移除了 pillow (解決打包失敗)
+# 移除了 sqlite3 (解決安裝後閃退)
+# 保留 sdl2_image (用來顯示圖片)
+# 保留 requests (用來下載圖片)
+requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
-# (4) 顯示
+# (4) 顯示設定
 orientation = portrait
 fullscreen = 0
-# 【輸入法解決方案】使用 adjustPan
+# 解決輸入法問題
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
