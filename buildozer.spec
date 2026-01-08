@@ -4,23 +4,20 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-# 【關鍵】版本號大跳躍，強制覆蓋舊版
-version = 20.0
+version = 30.0
 
 # (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【成功啟動版依賴】
-# 這是您上次成功看到 JOLIN 畫面時的配置
-# 移除了 pillow (它是閃退元兇)
-# 保留 sdl2_image (用來顯示圖片)
-# 保留 requests (用來下載圖片)
+# (3) 【極簡求生依賴】
+# 這是您上次「成功截圖」時的配置
+# 絕對不加 pillow (會閃退)
+# 絕對不加 sqlite3 (會閃退)
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 # (4) 顯示設定
 orientation = portrait
 fullscreen = 0
-# 【輸入法修正】
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
