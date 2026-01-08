@@ -4,13 +4,13 @@ import time
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統修正 (針對 Android)
+# 1. 系統設定
 # ==========================================
-# 【修正1：輸入法】設為空字串，強制讓 Android 系統鍵盤接管 (解決無法切中文)
+# 輸入法：交給系統接管
 Config.set('kivy', 'keyboard_mode', '')
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝瀏覽器 (解決 YouTube 阻擋)
+# 偽裝瀏覽器
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -31,7 +31,7 @@ from kivy.loader import Loader
 
 Loader.headers = {'User-Agent': USER_AGENT}
 
-# 字體載入 (失敗自動降級)
+# 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
@@ -119,7 +119,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (還原您的雙介面)
+# 3. KV 介面 (您的 Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -270,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 【修正2】使用原生 Image 顯示下載後的圖片
+        # 使用原生 Image
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -536,7 +536,7 @@ class MusicPlayerApp(App):
 
     @mainthread
     def on_engine_error(self, instance, error):
-        self.current_playing_title = "播放錯誤 (請重試)"
+        self.current_playing_title = "播放錯誤"
 
     def toggle_theme(self):
         self.is_spotify = not self.is_spotify
@@ -586,12 +586,12 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         try:
-            # 延遲載入 (防崩潰)
             import requests
             import yt_dlp
+            try: requests.packages.urllib3.disable_warnings()
+            except: pass
             
             cache_dir = get_path('Cache')
-            # 搜尋時只抓 info，不下載
             ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
             
             results_data = []
@@ -604,7 +604,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 【修正2】使用 requests 主動下載圖片
+                            # 手動下載圖片
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -631,7 +631,7 @@ class MusicPlayerApp(App):
         
         self.current_song_index = index
         data = self.root.ids.rv.data[index]
-        self.current_playing_title = f"準備下載: {data['title']}"
+        self.current_playing_title = f"準備播放: {data['title']}"
         
         folder = get_path('Music')
         safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
@@ -658,7 +658,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【修正3】強制下載 m4a，並禁止轉檔 (解決閃退)
+            # 強制禁止轉檔，避開閃退
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
