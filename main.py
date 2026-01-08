@@ -1,20 +1,24 @@
 import os
-# 強制指定 Kivy 使用 sdl2 (因為我們沒裝 Pillow)
+# 強制指定 Kivy 使用 sdl2 (因為我們沒裝 Pillow，這是防閃退關鍵)
 os.environ['KIVY_IMAGE'] = 'sdl2'
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
 import threading
+import time
 from kivy.config import Config
+
+# 【修復1】輸入法：強制交給 Android 系統
 Config.set('kivy', 'keyboard_mode', '')
 
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.properties import StringProperty, ListProperty, NumericProperty
+from kivy.properties import StringProperty, ListProperty, BooleanProperty, NumericProperty
 from kivy.clock import Clock, mainthread
 from kivy.utils import platform
 from kivy.event import EventDispatcher
@@ -24,14 +28,14 @@ from kivy.loader import Loader
 # 偽裝標頭
 Loader.headers = {'User-Agent': 'Mozilla/5.0'}
 
-# 字體載入 (失敗不崩潰)
+# 字體載入
 try:
     LabelBase.register(name='MyFont', fn_regular='NotoSansTC-Regular.otf', fn_bold='NotoSansTC-Regular.otf')
     FONT_NAME = 'MyFont'
 except: 
     FONT_NAME = 'Roboto'
 
-# 路徑函數 (改成呼叫時才執行，防止啟動崩潰)
+# 路徑管理 (使用安全路徑，避免權限崩潰)
 def get_storage_path():
     if platform == 'android':
         try:
@@ -42,7 +46,73 @@ def get_storage_path():
         return os.path.join(os.getcwd(), 'MusicPlayer')
 
 # ==========================================
-# KV 介面 (保持您的設計)
+# 2. 音樂引擎 (Native Player)
+# ==========================================
+class MusicEngine(EventDispatcher):
+    __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.player = None
+        self.user_paused = False
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                self.MediaPlayer = autoclass('android.media.MediaPlayer')
+                self.player = self.MediaPlayer()
+            except: pass
+
+    def load_track(self, filepath):
+        if not self.player: return self.dispatch('on_playback_ready', True)
+        try:
+            self.stop_monitor()
+            if self.player.isPlaying(): self.player.stop()
+            self.player.reset()
+            self.player.setDataSource(filepath)
+            self.player.prepare()
+            self.player.start()
+            self.user_paused = False
+            self.dispatch('on_playback_ready', True)
+            self.start_monitor()
+        except Exception as e: self.dispatch('on_error', str(e))
+
+    def pause_resume(self):
+        if not self.player: return False
+        try:
+            if self.player.isPlaying():
+                self.player.pause()
+                self.user_paused = True
+                return False
+            else:
+                self.player.start()
+                self.user_paused = False
+                self.start_monitor()
+                return True
+        except: return False
+
+    def stop(self):
+        self.stop_monitor()
+        if self.player and self.player.isPlaying(): self.player.stop()
+
+    def start_monitor(self):
+        Clock.unschedule(self._check)
+        Clock.schedule_interval(self._check, 1)
+    def stop_monitor(self):
+        Clock.unschedule(self._check)
+    
+    @mainthread
+    def _check(self, dt):
+        if self.player and not self.player.isPlaying() and not self.user_paused:
+            if self.player.getCurrentPosition() >= self.player.getDuration() - 1000:
+                self.stop_monitor()
+                self.dispatch('on_track_finished')
+
+    def on_playback_ready(self, s): pass
+    def on_track_finished(self): pass
+    def on_error(self, e): pass
+
+# ==========================================
+# 3. KV 介面 (您的雙介面完整版)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -62,6 +132,105 @@ KV_CODE = f"""
         halign: 'center'
         valign: 'middle'
 
+<PrevButton@ButtonBehavior+Widget>:
+    size_hint: None, None
+    size: '40dp', '40dp'
+    canvas:
+        Color:
+            rgba: [1, 1, 1, 1] if self.state == 'normal' else [0.5, 0.5, 0.5, 1]
+        Line:
+            points: [self.x, self.y + 10, self.x, self.top - 10]
+            width: 2
+        Triangle:
+            points: [self.x, self.center_y, self.right, self.top - 10, self.right, self.y + 10]
+
+<NextButton@ButtonBehavior+Widget>:
+    size_hint: None, None
+    size: '40dp', '40dp'
+    canvas:
+        Color:
+            rgba: [1, 1, 1, 1] if self.state == 'normal' else [0.5, 0.5, 0.5, 1]
+        Line:
+            points: [self.right, self.y + 10, self.right, self.top - 10]
+            width: 2
+        Triangle:
+            points: [self.right, self.center_y, self.x, self.top - 10, self.x, self.y + 10]
+
+<PlayButton@ButtonBehavior+Widget>:
+    size_hint: None, None
+    size: '50dp', '50dp'
+    canvas:
+        Color:
+            rgba: [1, 1, 1, 1] if self.state == 'normal' else [0.5, 0.5, 0.5, 1]
+        Triangle:
+            points: [self.x + 10, self.y + 5, self.x + 10, self.top - 5, self.right - 5, self.center_y]
+
+<PauseButton@ButtonBehavior+Widget>:
+    size_hint: None, None
+    size: '50dp', '50dp'
+    canvas:
+        Color:
+            rgba: [1, 1, 1, 1] if self.state == 'normal' else [0.5, 0.5, 0.5, 1]
+        Rectangle:
+            pos: self.x + 10, self.y + 5
+            size: 10, self.height - 10
+        Rectangle:
+            pos: self.right - 20, self.y + 5
+            size: 10, self.height - 10
+
+<ThemedInput@TextInput>:
+    font_name: '{FONT_NAME}'
+    font_size: '18sp'
+    background_normal: ''
+    background_active: ''
+    background_color: app.theme_input_bg
+    foreground_color: app.theme_text_color
+    padding_y: [self.height / 2.0 - (self.line_height / 2.0), 0]
+    padding_x: '10dp'
+    hint_text_color: [0.6, 0.6, 0.6, 1]
+    multiline: False
+    on_text_validate: app.search_music(self.text)
+
+<DashboardCard@Button>:
+    btn_color: [0.5, 0.5, 0.5, 1]
+    font_name: '{FONT_NAME}'
+    font_size: '15sp'
+    bold: True
+    color: [1, 1, 1, 1]
+    background_normal: ''
+    background_color: [0,0,0,0]
+    on_release: app.show_local_files(self.text)
+    text_size: self.size
+    halign: 'center'
+    valign: 'center'
+    canvas.before:
+        Color:
+            rgba: root.btn_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [10,]
+
+<SpotifyCard@Button>:
+    font_name: '{FONT_NAME}'
+    font_size: '18sp'
+    bold: True
+    background_normal: ''
+    background_color: 0, 0, 0, 0
+    font_size: '18sp'
+    bold: True
+    color: [1, 1, 1, 1]
+    text_size: self.size
+    halign: 'center'
+    valign: 'center'
+    canvas.before:
+        Color:
+            rgba: root.img_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [10,]
+
 <SongListItem>:
     orientation: 'horizontal'
     size_hint_y: None
@@ -71,35 +240,60 @@ KV_CODE = f"""
     on_release: app.play_manager(self.index)
     canvas.before:
         Color:
-            rgba: [0.1, 0.1, 0.1, 1]
+            rgba: app.theme_card_bg
         Rectangle:
             pos: self.pos
             size: self.size
-    
-    # 圖片顯示
-    Image:
-        source: root.thumb
-        color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
+
+    RelativeLayout:
         size_hint_x: None
         width: '80dp'
-        fit_mode: 'cover'
-        nocache: True
+        canvas.before:
+            Color:
+                rgba: [0.2, 0.2, 0.2, 1]
+            RoundedRectangle:
+                pos: 0, 0
+                size: self.size
+                radius: [8,]
+        Label:
+            text: 'Music'
+            font_name: '{FONT_NAME}'
+            font_size: '12sp'
+            bold: True
+            color: [1, 1, 1, 0.3]
+            pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
+        
+        # 【修復2】使用原生 Image 顯示下載的本地圖片
+        Image:
+            source: root.thumb
+            color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
+            fit_mode: 'cover'
+            size_hint_x: None
+            width: '80dp'
+            pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
+            nocache: True
 
     BoxLayout:
         orientation: 'vertical'
+        padding: 0
+        spacing: 0
         Label:
             text: root.title
             font_name: '{FONT_NAME}'
             font_size: '16sp'
+            color: app.theme_text_color
+            size_hint_y: 0.6
             text_size: self.size
             halign: 'left'
-            valign: 'center'
+            valign: 'bottom'
             shorten: True
+            shorten_from: 'right'
         Label:
             text: root.status_text
             font_name: '{FONT_NAME}'
             font_size: '12sp'
-            color: [0.5, 0.5, 0.5, 1]
+            size_hint_y: 0.4
+            color: app.theme_accent_color if '緩衝' in root.status_text else [0.5, 0.5, 0.5, 1]
             text_size: self.size
             halign: 'left'
             valign: 'top'
@@ -108,14 +302,14 @@ KV_CODE = f"""
         font_name: '{FONT_NAME}'
         size_hint_x: None
         width: '40dp'
-        color: [0.1, 0.8, 0.3, 1]
+        color: app.theme_accent_color
         font_size: '20sp'
 
 BoxLayout:
     orientation: 'vertical'
     canvas.before:
         Color:
-            rgba: [0.05, 0.05, 0.05, 1]
+            rgba: app.theme_bg_color
         Rectangle:
             pos: self.pos
             size: self.size
@@ -125,18 +319,88 @@ BoxLayout:
         height: '60dp' 
         padding: '10dp'
         spacing: '10dp'
-        TextInput:
+        canvas.before:
+            Color:
+                rgba: app.theme_bg_color
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        ThemedInput:
             id: search_input
-            hint_text: '輸入歌手...'
-            font_name: '{FONT_NAME}'
-            multiline: False
-            size_hint_x: 0.7
+            hint_text: '輸入歌手或歌名...'
+            size_hint_x: 0.65
+            canvas.after:
+                Color:
+                    rgba: [1, 1, 1, 0.1] if app.is_spotify else [0, 0, 0, 0.1]
+                Line:
+                    width: 1
+                    rounded_rectangle: self.x, self.y, self.width, self.height, 6
         Button:
             text: '搜尋'
             font_name: '{FONT_NAME}'
-            size_hint_x: 0.3
-            background_color: [0.1, 0.8, 0.3, 1]
+            size_hint_x: 0.2
+            background_normal: ''
+            background_color: [0.11, 0.72, 0.32, 1]
             on_release: app.search_music(search_input.text)
+        Button:
+            text: '切換'
+            font_name: '{FONT_NAME}'
+            size_hint_x: 0.15
+            background_normal: ''
+            background_color: [0.3, 0.3, 0.3, 1]
+            on_release: app.toggle_theme()
+
+    BoxLayout:
+        size_hint_y: None
+        height: '100dp' if not app.is_spotify else '0dp'
+        opacity: 1 if not app.is_spotify else 0
+        padding: '10dp'
+        spacing: '10dp'
+        DashboardCard:
+            text: '收藏的歌曲'
+            btn_color: [0.4, 0.2, 0.9, 1]
+        DashboardCard:
+            text: '我的播放清單'
+            btn_color: [0.2, 0.6, 0.5, 1]
+        DashboardCard:
+            text: '最近播放'
+            btn_color: [0.9, 0.6, 0.2, 1]
+
+    GridLayout:
+        cols: 2
+        size_hint_y: None
+        height: '140dp' if app.is_spotify else '0dp'
+        opacity: 1 if app.is_spotify else 0
+        padding: '10dp'
+        spacing: '8dp'
+        SpotifyCard:
+            text: '熱門華語'
+            img_color: [0.8, 0.2, 0.2, 1]
+            on_release: app.search_music('2024 熱門華語歌曲')
+        SpotifyCard:
+            text: '西洋排行榜'
+            img_color: [0.2, 0.5, 0.2, 1]
+            on_release: app.search_music('Billboard Hot 100 2024')
+        SpotifyCard:
+            text: 'K-POP 精選'
+            img_color: [0.8, 0.5, 0.2, 1]
+            on_release: app.search_music('KPOP 2024 Hits')
+        SpotifyCard:
+            text: '抖音熱歌'
+            img_color: [0.2, 0.2, 0.8, 1]
+            on_release: app.search_music('TikTok 抖音熱歌 2024')
+
+    Label:
+        text: app.list_title
+        font_name: '{FONT_NAME}'
+        font_size: '16sp'
+        bold: True
+        size_hint_y: None
+        height: '30dp'
+        color: app.theme_text_color
+        text_size: self.size
+        halign: 'left'
+        padding_x: '15dp'
 
     RecycleView:
         id: rv
@@ -152,12 +416,12 @@ BoxLayout:
 
     BoxLayout:
         size_hint_y: None
-        height: '80dp'
+        height: '100dp'
         padding: '10dp'
         orientation: 'vertical'
         canvas.before:
             Color:
-                rgba: [0.2, 0.2, 0.2, 1]
+                rgba: [0.4, 0.1, 0.1, 1] if app.is_spotify else [0.9, 0.9, 0.9, 1]
             RoundedRectangle:
                 pos: self.pos
                 size: self.size
@@ -165,61 +429,154 @@ BoxLayout:
         AutoScrollLabel:
             text: app.current_playing_title
             font_size: '16sp'
-            color: [1, 1, 1, 1]
+            size_hint_y: 0.4
+            color: [1, 1, 1, 1] if app.is_spotify else [0, 0, 0, 1]
         BoxLayout:
-            Button:
-                text: '播放/暫停'
-                font_name: '{FONT_NAME}'
-                on_release: app.toggle_play()
+            orientation: 'horizontal'
+            size_hint_y: 0.6
+            spacing: '40dp'
+            padding: [0, 5, 0, 5]
+            Widget: 
+            PrevButton:
+                on_release: app.play_previous()
+            RelativeLayout:
+                size_hint: None, None
+                size: '50dp', '50dp'
+                PlayButton:
+                    opacity: 1 if not app.is_playing else 0
+                    disabled: True if app.is_playing else False
+                    on_release: app.toggle_play()
+                    pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
+                PauseButton:
+                    opacity: 1 if app.is_playing else 0
+                    disabled: True if not app.is_playing else False
+                    on_release: app.toggle_play()
+                    pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
+            NextButton:
+                on_release: app.play_next()
+            Widget: 
 """
 
+# ==========================================
+# 4. 邏輯核心
+# ==========================================
 class AutoScrollLabel(ScrollView):
     text = StringProperty('')
     color = ListProperty([1, 1, 1, 1])
     font_size = StringProperty('16sp')
     def on_kv_post(self, base_widget):
         self.lbl = self.ids.lbl
-        self.bind(text=self.update_text)
+        self.bind(text=self.update_text, color=self.update_color)
         self.lbl.bind(texture_size=self.update_label_width)
         Clock.schedule_interval(self.animate, 3)
     def update_text(self, instance, value):
-        if hasattr(self, 'lbl'): self.lbl.text = value
+        if hasattr(self, 'lbl'):
+            self.lbl.text = value
+            self.scroll_x = 0
+            from kivy.animation import Animation
+            Animation.cancel_all(self)
+    def update_color(self, instance, value):
+        if hasattr(self, 'lbl'): self.lbl.color = value
     def update_label_width(self, *args):
         if hasattr(self, 'lbl'): self.lbl.width = self.lbl.texture_size[0] + 50
     def animate(self, dt):
         if hasattr(self, 'lbl') and self.lbl.width > self.width:
             from kivy.animation import Animation
-            anim = Animation(scroll_x=1, duration=8, t='linear') + Animation(scroll_x=0, duration=0.5)
+            anim = Animation(scroll_x=1, duration=8, t='linear') + \
+                   Animation(scroll_x=1, duration=2) + \
+                   Animation(scroll_x=0, duration=0.5)
             anim.start(self)
+        else: self.scroll_x = 0
 
 class SongListItem(ButtonBehavior, BoxLayout):
     title = StringProperty("")
     url = StringProperty("")
     thumb = StringProperty("")
-    status_text = StringProperty("")
+    status_text = StringProperty("YouTube 音樂")
     index = NumericProperty(0)
 
 class MusicPlayerApp(App):
-    current_playing_title = StringProperty("準備就緒")
+    is_spotify = BooleanProperty(True)
+    theme_bg_color = ListProperty([0.07, 0.07, 0.07, 1])
+    theme_text_color = ListProperty([1, 1, 1, 1])
+    theme_input_bg = ListProperty([0.2, 0.2, 0.2, 1])
+    theme_card_bg = ListProperty([0.07, 0.07, 0.07, 1])
+    theme_accent_color = ListProperty([0.11, 0.72, 0.32, 1])
+    
+    list_title = StringProperty("搜尋結果")
+    current_playing_title = StringProperty("尚未播放")
+    is_playing = BooleanProperty(False)
+    current_song_index = -1
     
     def build(self):
-        # 延遲初始化播放器，防止啟動崩潰
-        self.player = None
-        Clock.schedule_once(self.init_player, 1)
+        self.engine = MusicEngine()
+        self.engine.bind(on_playback_ready=self.on_engine_ready)
+        self.engine.bind(on_track_finished=self.on_track_finished)
+        self.engine.bind(on_error=self.on_engine_error)
+        self.apply_spotify_theme()
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.INTERNET, Permission.READ_EXTERNAL_STORAGE, Permission.WRITE_EXTERNAL_STORAGE])
         return Builder.load_string(KV_CODE)
 
-    def init_player(self, dt):
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                self.MediaPlayer = autoclass('android.media.MediaPlayer')
-                self.player = self.MediaPlayer()
-            except: pass
+    @mainthread
+    def on_engine_ready(self, instance, success):
+        self.is_playing = True
+
+    @mainthread
+    def on_track_finished(self, instance):
+        self.play_next()
+
+    @mainthread
+    def on_engine_error(self, instance, error):
+        self.current_playing_title = "播放錯誤"
+
+    def toggle_theme(self):
+        self.is_spotify = not self.is_spotify
+        if self.is_spotify: self.apply_spotify_theme()
+        else: self.apply_xiaomi_theme()
+
+    def apply_spotify_theme(self):
+        self.theme_bg_color = [0.07, 0.07, 0.07, 1]
+        self.theme_text_color = [1, 1, 1, 1]
+        self.theme_input_bg = [0.2, 0.2, 0.2, 1]
+        self.theme_card_bg = [0.07, 0.07, 0.07, 1]
+        self.theme_accent_color = [0.11, 0.72, 0.32, 1]
+
+    def apply_xiaomi_theme(self):
+        self.theme_bg_color = [0.98, 0.98, 0.98, 1]
+        self.theme_text_color = [0.1, 0.1, 0.1, 1]
+        self.theme_input_bg = [0.92, 0.92, 0.92, 1]
+        self.theme_card_bg = [1, 1, 1, 0]
+        self.theme_accent_color = [0.5, 0.2, 0.8, 1]
+
+    def show_local_files(self, category_name):
+        self.current_song_index = -1
+        self.list_title = f"{category_name} (本地檔案)"
+        folder = get_storage_path()
+        music_dir = os.path.join(folder, 'Music')
+        cache_dir = os.path.join(folder, 'Cache')
+        
+        local_songs = []
+        if os.path.exists(music_dir):
+            for i, f in enumerate(os.listdir(music_dir)):
+                if f.endswith(('.m4a', '.mp3')):
+                    title = os.path.splitext(f)[0]
+                    thumb_path = os.path.join(cache_dir, f"{title}.jpg")
+                    thumb = thumb_path if os.path.exists(thumb_path) else ''
+                    
+                    local_songs.append({
+                        'title': title, 'url': '', 'thumb': thumb, 
+                        'status_text': '[本機] 已下載', 'index': len(local_songs)
+                    })
+        self.root.ids.rv.data = local_songs
 
     def search_music(self, keyword):
         if not keyword: return
+        self.current_song_index = -1
+        self.list_title = f"搜尋：{keyword}"
+        self.root.ids.search_input.focus = False
         self.current_playing_title = "搜尋中..."
-        # 啟動線程
         threading.Thread(target=self._search_thread, args=(keyword,)).start()
 
     def _search_thread(self, keyword):
@@ -235,7 +592,7 @@ class MusicPlayerApp(App):
             
             results_data = []
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch10:{keyword}", download=False)
+                info = ydl.extract_info(f"ytsearch20:{keyword}", download=False)
                 if info and 'entries' in info:
                     for i, entry in enumerate(info['entries']):
                         if entry:
@@ -243,7 +600,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 手動下載圖片 (因為沒有 Pillow)
+                            # 【修復2】手動下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -251,32 +608,49 @@ class MusicPlayerApp(App):
                                     with open(local_thumb, 'wb') as f: f.write(resp.content)
                                 except: pass
                             
-                            # 檢查圖片是否存在
                             final_thumb = local_thumb if os.path.exists(local_thumb) else ''
-
                             results_data.append({
-                                'title': title, 
-                                'url': entry.get('url', ''), 
-                                'thumb': final_thumb, 
-                                'status_text': 'YouTube', 
-                                'index': i
+                                'title': title, 'url': entry.get('url', ''), 
+                                'thumb': final_thumb, 'status_text': 'YouTube 音樂', 'index': i
                             })
-            
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"搜尋錯誤: {e}"))
+            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
 
     @mainthread
     def _update_list(self, data):
         self.root.ids.rv.data = data
-        self.current_playing_title = "請選擇歌曲"
+        self.current_playing_title = "請點擊播放"
 
     def play_manager(self, index):
+        if index < 0 or index >= len(self.root.ids.rv.data): return
+        
+        self.current_song_index = index
         data = self.root.ids.rv.data[index]
-        self.current_playing_title = f"下載中: {data['title']}"
-        threading.Thread(target=self._download_thread, args=(data['url'], data['title'])).start()
+        self.current_playing_title = f"準備下載: {data['title']}"
+        
+        folder = get_storage_path()
+        music_dir = os.path.join(folder, 'Music')
+        
+        safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
+        target_file = None
+        
+        if os.path.exists(music_dir):
+            for f in os.listdir(music_dir):
+                if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
+                    target_file = os.path.join(music_dir, f)
+                    break
+        
+        if target_file:
+            self.engine.load_track(target_file)
+        elif data['url']:
+            self.cache_and_play(data['url'], data['title'], data['thumb'])
 
-    def _download_thread(self, url, title):
+    def cache_and_play(self, url, title, thumb_path):
+        self.current_playing_title = f"下載中..."
+        threading.Thread(target=self._download_thread, args=(url, title, thumb_path)).start()
+
+    def _download_thread(self, url, title, thumb_path):
         try:
             import yt_dlp
             root_path = get_storage_path()
@@ -286,12 +660,14 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(music_dir, f'{safe_title}.%(ext)s')
             
-            # 強制 m4a (最穩定的格式，不需轉檔)
+            # 【修復3】強制下載 m4a，禁止轉檔
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
                 'quiet': True,
-                'nocheckcertificate': True
+                'nocheckcertificate': True,
+                'postprocessors': [],
+                'keepvideo': True
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -303,31 +679,35 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(music_dir, f)
                     break
             
+            # 備份圖片
+            if thumb_path and os.path.exists(thumb_path):
+                import shutil
+                try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
+                except: pass
+
             if target_file:
-                Clock.schedule_once(lambda dt: self.play_file(target_file))
-                Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"播放: {safe_title}"))
+                Clock.schedule_once(lambda dt: self.engine.load_track(target_file))
+                Clock.schedule_once(lambda dt: self._update_title(f"播放: {safe_title}"))
             else:
-                Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "下載失敗"))
-        except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"錯誤: {e}"))
+                Clock.schedule_once(lambda dt: self._update_title("下載失敗"))
+        except:
+            Clock.schedule_once(lambda dt: self._update_title("下載錯誤"))
 
     @mainthread
-    def play_file(self, filepath):
-        if not self.player: return
-        try:
-            if self.player.isPlaying(): self.player.stop()
-            self.player.reset()
-            self.player.setDataSource(filepath)
-            self.player.prepare()
-            self.player.start()
-        except: pass
+    def _update_title(self, text):
+        self.current_playing_title = text
+
+    def play_previous(self):
+        new_index = self.current_song_index - 1
+        self.play_manager(new_index)
+
+    def play_next(self):
+        new_index = self.current_song_index + 1
+        self.play_manager(new_index)
 
     def toggle_play(self):
-        if self.player:
-            try:
-                if self.player.isPlaying(): self.player.pause()
-                else: self.player.start()
-            except: pass
+        is_playing = self.engine.pause_resume()
+        self.is_playing = is_playing
 
 if __name__ == '__main__':
     MusicPlayerApp().run()
