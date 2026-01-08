@@ -4,20 +4,19 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 31.0
+version = 40.0
 
 # (2) 檔案包含
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# (3) 【成功驗證的依賴】
-# 絕對不加 pillow (會閃退)
-# 絕對不加 sqlite3 (會閃退)
+# (3) 【成功驗證過的清單】
+# 這是您上次成功進入畫面的配置
+# 移除了 pillow (防閃退)
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 # (4) 顯示設定
 orientation = portrait
 fullscreen = 0
-# 【關鍵】解決輸入法被遮擋
 android.window_softinput_mode = adjustPan
 
 # (5) 權限
