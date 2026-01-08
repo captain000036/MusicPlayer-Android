@@ -5,11 +5,11 @@ os.environ['SDL_IME_SHOW_UI'] = '1'
 
 import threading
 import time
-import requests
 from kivy.config import Config
 
-# 【修復1】輸入法：設定為 'system' (解決無法切換中文)
-Config.set('kivy', 'keyboard_mode', 'system')
+# 【修正1】輸入法：強制交給 Android 系統
+# 這是目前解決無法切換中文的標準解法
+Config.set('kivy', 'keyboard_mode', '')
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -26,11 +26,13 @@ from kivy.event import EventDispatcher
 from kivy.core.text import LabelBase
 from kivy.loader import Loader
 
+# 偽裝
 Loader.headers = {'User-Agent': 'Mozilla/5.0'}
 
-# ==========================================
-# 自動環境修復 (路徑與字型)
-# ==========================================
+# 字體：暫時使用系統預設，防止啟動下載導致崩潰
+FONT_NAME = 'Roboto'
+
+# 路徑管理
 def get_path(folder_name):
     if platform == 'android':
         try:
@@ -43,29 +45,6 @@ def get_path(folder_name):
     target = os.path.join(root, folder_name)
     if not os.path.exists(target): os.makedirs(target, exist_ok=True)
     return target
-
-# 【修復2】自動下載中文字型 (解決亂碼)
-font_path = os.path.join(get_path('Cache'), 'DroidSansFallback.ttf')
-if not os.path.exists(font_path):
-    print("正在下載中文字型...")
-    try:
-        # 下載 Google 的 Noto Sans TC
-        url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf"
-        r = requests.get(url, allow_redirects=True, timeout=10)
-        with open(font_path, 'wb') as f:
-            f.write(r.content)
-    except Exception as e:
-        print(f"字型下載失敗: {e}")
-
-# 註冊字型
-try:
-    if os.path.exists(font_path):
-        LabelBase.register(name='MyFont', fn_regular=font_path, fn_bold=font_path)
-        FONT_NAME = 'MyFont'
-    else:
-        FONT_NAME = 'Roboto' # 萬一下載失敗的備案
-except:
-    FONT_NAME = 'Roboto'
 
 # ==========================================
 # 2. 音樂引擎
@@ -134,7 +113,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (還原您的雙介面)
+# 3. KV 介面 (您的雙介面完整版)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -285,7 +264,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 圖片
+        # 【修正2】使用原生 Image 讀取本地圖片，不依賴網路
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -526,7 +505,7 @@ class MusicPlayerApp(App):
     theme_accent_color = ListProperty([0.11, 0.72, 0.32, 1])
     
     list_title = StringProperty("搜尋結果")
-    current_playing_title = StringProperty("請搜尋歌曲")
+    current_playing_title = StringProperty("尚未播放")
     is_playing = BooleanProperty(False)
     current_song_index = -1
     
@@ -551,7 +530,7 @@ class MusicPlayerApp(App):
 
     @mainthread
     def on_engine_error(self, instance, error):
-        self.current_playing_title = f"播放錯誤: {error[:20]}"
+        self.current_playing_title = "播放錯誤 (請重試)"
 
     def toggle_theme(self):
         self.is_spotify = not self.is_spotify
@@ -606,9 +585,6 @@ class MusicPlayerApp(App):
             import yt_dlp
             
             cache_dir = get_path('Cache')
-            # 【修復3】使用 requests 下載圖片 (Verify=False)
-            requests.packages.urllib3.disable_warnings()
-            
             ydl_opts = {'quiet': True, 'extract_flat': True, 'ignoreerrors': True, 'nocheckcertificate': True}
             
             results_data = []
@@ -621,10 +597,10 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
+                            # 【修復2】手動下載圖片到本地
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
-                                    # 下載圖片
                                     resp = requests.get(thumb_url, timeout=3, verify=False)
                                     with open(local_thumb, 'wb') as f: f.write(resp.content)
                                 except: pass
@@ -636,7 +612,7 @@ class MusicPlayerApp(App):
                             })
             Clock.schedule_once(lambda dt: self._update_list(results_data))
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', f"搜尋錯誤: {e}"))
+            Clock.schedule_once(lambda dt: setattr(self, 'current_playing_title', "搜尋完畢"))
 
     @mainthread
     def _update_list(self, data):
@@ -648,15 +624,14 @@ class MusicPlayerApp(App):
         
         self.current_song_index = index
         data = self.root.ids.rv.data[index]
-        self.current_playing_title = f"下載中: {data['title']}"
+        self.current_playing_title = f"準備下載: {data['title']}"
         
         folder = get_path('Music')
-        # 簡易比對檔名
-        safe_title = "".join([c for c in data['title'] if c.isalnum() or c in ' -_']).rstrip()
+        safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
         target_file = None
         
         for f in os.listdir(folder):
-            if safe_title in f and f.endswith(('.mp3', '.m4a')):
+            if safe_title in f and f.endswith(('.mp3', '.m4a', '.mp4')):
                 target_file = os.path.join(folder, f)
                 break
         
@@ -666,22 +641,23 @@ class MusicPlayerApp(App):
             self.cache_and_play(data['url'], data['title'], data['thumb'])
 
     def cache_and_play(self, url, title, thumb_path):
+        self.current_playing_title = f"下載中..."
         threading.Thread(target=self._download_thread, args=(url, title, thumb_path)).start()
 
     def _download_thread(self, url, title, thumb_path):
         try:
             import yt_dlp
             folder = get_path('Music')
-            safe_title = "".join([c for c in title if c.isalnum() or c in ' -_']).rstrip()
+            safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 【修復4】播放穩定性：bestaudio[ext=m4a]
+            # 【修復3】強制下載 m4a，禁止轉檔
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
                 'quiet': True,
                 'nocheckcertificate': True,
-                'postprocessors': [], # 禁止後製
+                'postprocessors': [],
                 'keepvideo': True
             }
             
@@ -694,7 +670,6 @@ class MusicPlayerApp(App):
                     target_file = os.path.join(folder, f)
                     break
             
-            # 備份圖片方便下次顯示
             if thumb_path and os.path.exists(thumb_path):
                 import shutil
                 try: shutil.copy(thumb_path, os.path.join(folder, f"{safe_title}.jpg"))
@@ -705,8 +680,8 @@ class MusicPlayerApp(App):
                 Clock.schedule_once(lambda dt: self._update_title(f"播放: {safe_title}"))
             else:
                 Clock.schedule_once(lambda dt: self._update_title("下載失敗"))
-        except Exception as e:
-            Clock.schedule_once(lambda dt: self._update_title(f"下載錯誤: {e}"))
+        except:
+            Clock.schedule_once(lambda dt: self._update_title("下載錯誤"))
 
     @mainthread
     def _update_title(self, text):
