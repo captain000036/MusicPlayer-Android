@@ -3,12 +3,12 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 50.0
+version = 60.0
 
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【成功驗證過的清單】
-# 只有這些，不多也不少
+# 【成功開機的清單】
+# 這裡不動，保證能進 APP
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 orientation = portrait
