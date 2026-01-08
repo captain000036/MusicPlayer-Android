@@ -4,13 +4,13 @@ import time
 from kivy.config import Config
 
 # ==========================================
-# 1. 系統設定
+# 1. 系統設定 (System Config)
 # ==========================================
-# 輸入法：交給系統接管
-Config.set('kivy', 'keyboard_mode', '')
+# 輸入法修正：強制交給 Android 系統
+Config.set('kivy', 'keyboard_mode', '') 
 os.environ['SDL_IME_SHOW_UI'] = '1'
 
-# 偽裝瀏覽器
+# 偽裝 User-Agent
 USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36'
 Config.set('network', 'useragent', USER_AGENT)
 
@@ -53,7 +53,7 @@ def get_path(folder_name):
     return target
 
 # ==========================================
-# 2. 音樂引擎
+# 2. 音樂引擎 (Native Player)
 # ==========================================
 class MusicEngine(EventDispatcher):
     __events__ = ('on_playback_ready', 'on_track_finished', 'on_error')
@@ -119,7 +119,7 @@ class MusicEngine(EventDispatcher):
     def on_error(self, e): pass
 
 # ==========================================
-# 3. KV 介面 (您的 Spotify 風格)
+# 3. KV 介面 (Spotify 風格)
 # ==========================================
 KV_CODE = f"""
 #:import hex kivy.utils.get_color_from_hex
@@ -270,7 +270,7 @@ KV_CODE = f"""
             color: [1, 1, 1, 0.3]
             pos_hint: {{'center_x': 0.5, 'center_y': 0.5}}
         
-        # 使用原生 Image
+        # 使用原生 Image 讀取本地檔案 (不需 Pillow)
         Image:
             source: root.thumb
             color: [1, 1, 1, 1] if root.thumb else [1, 1, 1, 0]
@@ -536,7 +536,7 @@ class MusicPlayerApp(App):
 
     @mainthread
     def on_engine_error(self, instance, error):
-        self.current_playing_title = "播放錯誤"
+        self.current_playing_title = "播放錯誤 (請重試)"
 
     def toggle_theme(self):
         self.is_spotify = not self.is_spotify
@@ -586,7 +586,9 @@ class MusicPlayerApp(App):
 
     def _search_thread(self, keyword):
         try:
+            # 延遲載入，防止啟動崩潰
             import requests
+            import ssl
             import yt_dlp
             try: requests.packages.urllib3.disable_warnings()
             except: pass
@@ -604,7 +606,7 @@ class MusicPlayerApp(App):
                             thumb_url = entry.get('thumbnail', '')
                             video_id = entry.get('id', str(i))
                             
-                            # 手動下載圖片
+                            # 【修正2】使用 requests 主動下載圖片
                             local_thumb = os.path.join(cache_dir, f"{video_id}.jpg")
                             if thumb_url and not os.path.exists(local_thumb):
                                 try:
@@ -631,7 +633,7 @@ class MusicPlayerApp(App):
         
         self.current_song_index = index
         data = self.root.ids.rv.data[index]
-        self.current_playing_title = f"準備播放: {data['title']}"
+        self.current_playing_title = f"準備下載: {data['title']}"
         
         folder = get_path('Music')
         safe_title = "".join([c for c in data['title'] if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
@@ -658,7 +660,7 @@ class MusicPlayerApp(App):
             safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c in ' -_']).rstrip()
             out_tmpl = os.path.join(folder, f'{safe_title}.%(ext)s')
             
-            # 強制禁止轉檔，避開閃退
+            # 【修正3】強制下載 m4a，並禁止轉檔 (解決閃退)
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/best', 
                 'outtmpl': out_tmpl, 
