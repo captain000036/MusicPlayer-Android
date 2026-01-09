@@ -3,18 +3,21 @@ title = MusicPlayer
 package.name = musicplayer
 package.domain = org.test
 source.dir = .
-version = 99.0
+version = 999.0
 
+# 檔案過濾
 source.include_exts = py,png,jpg,kv,atlas,otf,ttf,json
 
-# 【維持能開機的配置】
+# 【極簡依賴】
+# 移除所有可能導致衝突的庫，只留最核心的
 requirements = python3,kivy,android,pyjnius,yt-dlp,requests,openssl,certifi,sdl2_image,libffi
 
 orientation = portrait
 fullscreen = 0
 android.window_softinput_mode = adjustPan
 
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,WAKE_LOCK
+# 權限 (雖然寫了，但我們改用私有目錄，不太依賴這些了)
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,WAKE_LOCK
 
 android.api = 33
 android.minapi = 21
